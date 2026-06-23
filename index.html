@@ -1132,7 +1132,7 @@ async function autoSyncCalc(){
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
   }catch(e){}
 }
-function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();}
+function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}}
 
 document.getElementById('tabs').addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;goView(e.target.dataset.view);});
 function goView(v){
