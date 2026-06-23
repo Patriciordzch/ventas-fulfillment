@@ -1581,6 +1581,7 @@ async function ecoLoad(){
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
     assignOrphanCalendlyLeads(); // reasigna leads de Calendly sin vendedor (solo rellena; nunca borra)
+    dedupeClients(); // une clientes duplicados (mismo nombre+vendedor) conservando el más avanzado + su facturación
     save();
     return true;
   }catch(e){showToast('Error al cargar de Supabase: '+e.message);return false;}
@@ -1647,6 +1648,38 @@ function dedupeSellers(){
   const rem=new Set(removeIds);
   state.sellers=state.sellers.filter(s=>!rem.has(s.id));
   return removeIds.length;   // SOLO local — sin ecoDeleteSeller, sin push masivo
+}
+// Une clientes duplicados (mismo nombre normalizado + mismo vendedor). Conserva el registro
+// MÁS AVANZADO (etapa) y con MÁS facturación, le transfiere la facturación del duplicado (no se
+// pierde nada) y borra los repetidos. Es DETERMINISTA: todas las sesiones eligen el mismo a
+// conservar, así no se pelean. Solo debe correr sobre datos frescos de Supabase (dentro de ecoLoad).
+function dedupeClients(){
+  if(!state||!state.clients)return 0;
+  const billCount=id=>Object.keys(state.billing[id]||{}).length;
+  const groups={};
+  state.clients.forEach(c=>{const k=normName(c.name)+'|'+(c.sellerId||'');if(!normName(c.name))return;(groups[k]=groups[k]||[]).push(c);});
+  const removeIds=[];
+  Object.values(groups).forEach(g=>{
+    if(g.length<2)return;
+    g.sort((a,b)=>{
+      const sa=stageIdx(a.stage),sb=stageIdx(b.stage); if(sa!==sb)return sb-sa;        // etapa más avanzada primero
+      const ba=billCount(a.id),bb=billCount(b.id); if(ba!==bb)return bb-ba;             // más meses facturados
+      return String(a.id)<String(b.id)?-1:1;                                            // desempate determinista
+    });
+    const keep=g[0];
+    g.slice(1).forEach(d=>{
+      const db=state.billing[d.id];
+      if(db&&Object.keys(db).length){state.billing[keep.id]=state.billing[keep.id]||{};Object.keys(db).forEach(mk=>{if(!state.billing[keep.id][mk])state.billing[keep.id][mk]=db[mk];});ecoMarkClient(keep.id);}
+      if(!keep.calcSlug&&d.calcSlug){keep.calcSlug=d.calcSlug;keep.calcNegId=keep.calcNegId||d.calcNegId;ecoMarkClient(keep.id);}
+      removeIds.push(d.id);
+    });
+  });
+  if(!removeIds.length)return 0;
+  const rem=new Set(removeIds);
+  state.clients=state.clients.filter(c=>!rem.has(c.id));
+  removeIds.forEach(id=>{delete state.billing[id];});
+  if(ecoOn()){removeIds.forEach(id=>ecoDeleteClient(id));ecoSchedulePush();}
+  return removeIds.length;
 }
 // Solo une vendedores duplicados en la vista (no borra clientes). El dedup de clientes por
 // nombre se eliminó porque podía borrar leads distintos en la base compartida.
