@@ -1235,16 +1235,12 @@ function renderVendedores(){
   const gmonths=monthsBack(mk,12), glbl=gmonths.map(x=>monthName(x).slice(0,3)+" '"+x.slice(2,4));
   const gFac=gmonths.map(mm=>{let t=0;m.cl.forEach(c=>t+=clientBilling(c.id,mm)?.amount||0);return t;});
   const gCli=gmonths.map(mm=>m.cl.filter(c=>(clientBilling(c.id,mm)?.amount||0)>0).length);
-  const gNew=gmonths.map(mm=>m.cl.filter(c=>opMonth1(c)===mm).length); // clientes que empezaron a operar ese mes
-  const drillGrowth=(i,di)=>{const mm=gmonths[i];let g,title,cols;
-    if(di===2){ g=m.cl.filter(c=>opMonth1(c)===mm); title=s.name+' · Clientes nuevos · '+monthName(mm)+" '"+mm.slice(2,4); cols=[{h:'Entrada',get:c=>{const o=opMonth1(c);return o?monthName(o).slice(0,3)+" '"+o.slice(2,4):'—';}},{h:'Venta nueva',get:c=>money(ventaBase(c))}]; }
-    else { g=m.cl.filter(c=>(clientBilling(c.id,mm)?.amount||0)>0); title=s.name+' · Facturaron · '+monthName(mm)+" '"+mm.slice(2,4); cols=[{h:'Fact. mes',get:c=>money(clientBilling(c.id,mm)?.amount||0)},{h:'Total ventas',get:c=>money(clientLTV(c))}]; }
+  const drillGrowth=(i)=>{const mm=gmonths[i];const g=m.cl.filter(c=>(clientBilling(c.id,mm)?.amount||0)>0); const title=s.name+' · Facturaron · '+monthName(mm)+" '"+mm.slice(2,4); const cols=[{h:'Fact. mes',get:c=>money(clientBilling(c.id,mm)?.amount||0)},{h:'Total ventas',get:c=>money(clientLTV(c))}];
     if(!g.length){showToast('Sin clientes en '+monthName(mm));return;} drillClients(title,g,cols);};
   mkChart('growth_'+sid,{data:{labels:glbl,datasets:[
-    {type:'bar',label:'Facturación',data:gFac,backgroundColor:'#00ab10',borderRadius:5,maxBarThickness:30,yAxisID:'y',order:3},
-    {type:'line',label:'Clientes facturando',data:gCli,borderColor:'#003875',backgroundColor:'rgba(0,56,117,.10)',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:'#003875',yAxisID:'y1',order:1},
-    {type:'line',label:'Clientes nuevos',data:gNew,borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.12)',borderWidth:2,borderDash:[5,4],tension:.3,pointRadius:3,pointBackgroundColor:'#f59e0b',yAxisID:'y1',order:2}
-  ]},options:{maintainAspectRatio:false,onHover:(e,els)=>{if(e.native)e.native.target.style.cursor=els.length?'pointer':'default';},onClick:(e,els)=>{if(els.length)drillGrowth(els[0].index,els[0].datasetIndex);},plugins:{legend:{display:true,labels:{font:{size:11},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='Facturación'?'Facturación: '+money(ctx.parsed.y):ctx.dataset.label+': '+ctx.parsed.y}}},scales:{y:{position:'left',beginAtZero:true,ticks:{callback:v=>'$'+(Math.abs(v)>=1000?(Math.round(v/100)/10)+'k':v),font:{size:10}},grid:{color:'#eef2f8'}},y1:{position:'right',beginAtZero:true,ticks:{precision:0,stepSize:1,font:{size:10}},grid:{display:false},title:{display:true,text:'clientes',font:{size:10}}},x:{ticks:{font:{size:10}},grid:{display:false}}}}});
+    {type:'bar',label:'Facturación',data:gFac,backgroundColor:'#00ab10',borderRadius:5,maxBarThickness:30,yAxisID:'y',order:2},
+    {type:'line',label:'Clientes facturando',data:gCli,borderColor:'#003875',backgroundColor:'rgba(0,56,117,.10)',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:'#003875',yAxisID:'y1',order:1}
+  ]},options:{maintainAspectRatio:false,onHover:(e,els)=>{if(e.native)e.native.target.style.cursor=els.length?'pointer':'default';},onClick:(e,els)=>{if(els.length)drillGrowth(els[0].index);},plugins:{legend:{display:true,labels:{font:{size:11},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='Facturación'?'Facturación: '+money(ctx.parsed.y):ctx.dataset.label+': '+ctx.parsed.y}}},scales:{y:{position:'left',beginAtZero:true,ticks:{callback:v=>'$'+(Math.abs(v)>=1000?(Math.round(v/100)/10)+'k':v),font:{size:10}},grid:{color:'#eef2f8'}},y1:{position:'right',beginAtZero:true,ticks:{precision:0,stepSize:1,font:{size:10}},grid:{display:false},title:{display:true,text:'clientes',font:{size:10}}},x:{ticks:{font:{size:10}},grid:{display:false}}}}});
 }
 
 /* ---------- PERMISOS POR ROL ---------- */
