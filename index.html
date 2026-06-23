@@ -1581,6 +1581,7 @@ async function ecoLoad(){
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
     assignOrphanCalendlyLeads(); // reasigna leads de Calendly sin vendedor (solo rellena; nunca borra)
+    calendlyLeadsToDemo();       // los leads de Calendly entran a "Demo agendado"
     dedupeClients(); // une clientes duplicados (mismo nombre+vendedor) conservando el más avanzado + su facturación
     save();
     return true;
@@ -1715,6 +1716,19 @@ function assignOrphanCalendlyLeads(){
   if(n&&ecoOn())ecoSchedulePush();                          // sube solo la asignación (no borra)
   return n;
 }
+// Los leads que llegan de Calendly entran directo a "Demo agendado/realizado" (etapa 'demo').
+// Solo mueve los recién llegados (aún en 'lead' y sin avances), nunca uno que ya movieron a mano.
+function calendlyLeadsToDemo(){
+  if(!state||!state.clients)return 0;
+  let n=0;
+  state.clients.forEach(c=>{
+    if((c.source||'')==='Calendly' && c.stage==='lead' && (!c.history || c.history.length<=1)){
+      changeStage(c,'demo'); touch(c); n++;
+    }
+  });
+  if(n&&ecoOn())ecoSchedulePush();
+  return n;
+}
 function _autoDedupe_disabled(){
   if(!state||!state.clients)return 0;
   const groups={};
@@ -1759,7 +1773,9 @@ async function generateNegLink(){
     if(error){ showToast('❌ No se pudo crear: '+error.message); updateModalCalcLink(); return; }
     const {data:check}=await sb.from('negotiations').select('slug').eq('slug',_modalSlug).maybeSingle();
     updateModalCalcLink();
-    showToast(check?('✅ Negociación creada en la calculadora · '+_modalSlug):'⚠ Se envió pero no se confirmó; revisa permisos');
+    // Al crear el link, avanza la etapa a "Calculadora enviada" (solo si está antes; al Guardar queda registrada).
+    if(check){const stEl=document.getElementById('cmStage'); if(stEl&&stageIdx(stEl.value)<stageIdx('calc'))stEl.value='calc';}
+    showToast(check?('✅ Negociación creada · etapa → Calculadora enviada (Guarda para registrar) · '+_modalSlug):'⚠ Se envió pero no se confirmó; revisa permisos');
   }catch(e){ updateModalCalcLink(); showToast('❌ Error de conexión: '+e.message); }
 }
 async function calcLogin(){
