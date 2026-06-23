@@ -1837,7 +1837,8 @@ async function doLogin(){
       state.calcSession=data&&data.session?{access_token:data.session.access_token,refresh_token:data.session.refresh_token}:null;
       if(state.calc)state.calc.email=email; save();
       document.getElementById('loginPass').value='';
-      onAuthed(data.session);
+      btn.textContent='Entrando… cargando datos'; // se mantiene hasta que onAuthed carga y revela la app
+      await onAuthed(data.session);
     }
   }catch(e){ loginErr('Error: '+e.message); }
   btn.textContent='Entrar'; btn.disabled=false;
