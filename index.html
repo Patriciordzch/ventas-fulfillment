@@ -1789,7 +1789,8 @@ async function doLogin(){
   btn.textContent='Entrar'; btn.disabled=false;
 }
 async function onAuthed(session){
-  hideLoginGate();
+  // NO revelamos la app todavía: el login gate sigue cubriendo mientras cargamos y
+  // aplicamos permisos, para que un vendedor NUNCA vea el menú/datos completos de admin.
   let name=session.user.email, role='';
   try{ const sb=getSb(); const {data}=await sb.from('profiles').select('name,role').eq('id',session.user.id).maybeSingle(); if(data){name=data.name||name;role=data.role||'';} }catch(e){}
   currentUser={id:session.user.id,email:session.user.email,name,role};
@@ -1797,9 +1798,10 @@ async function onAuthed(session){
   if(state)state.ecoMode=true;          // la app SIEMPRE trabaja sobre la base compartida
   await ecoLoad();                       // trae lo más reciente de Supabase al entrar
   ensureViewerSeller();
-  applyPermissions();
+  applyPermissions();                    // oculta tabs/datos de admin según el rol
   renderAll();
   if(currentView==='usuarios')renderUsuarios();
+  hideLoginGate();                       // recién ahora, ya scopeado, mostramos la app
   startEcoPoll();                        // se mantiene al día solo (sin refrescar a mano)
   try{calcAuthStatus();}catch(e){}
   try{autoSyncCalc();}catch(e){}
