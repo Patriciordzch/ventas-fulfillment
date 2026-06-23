@@ -185,6 +185,61 @@
   .hist-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
   .hist-name{flex:1;font-size:13px;font-weight:600;color:var(--txt)}
   .hist-date{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  /* ======================= RESPONSIVE / MÓVIL ======================= */
+  @media (max-width:720px){
+    /* Encabezado: marca arriba, menú en tira deslizable, controles que envuelven */
+    header.top{flex-wrap:wrap;gap:9px;padding:10px 13px}
+    .brand .brand-div,.brand .brand-tag{display:none}        /* solo el logo en móvil */
+    .brand .brand-logo-top{height:26px}
+    .spacer{display:none}
+    .seller-filter{font-size:12px;gap:6px}
+    .seller-filter .lbl{display:none}                          /* la etiqueta "Vendedor" estorba */
+    #userChip{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+    nav.tabs{order:5;width:100%;flex-wrap:nowrap;overflow-x:auto;margin-left:0;gap:4px;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+    nav.tabs button{flex:0 0 auto;padding:8px 13px;font-size:13px;white-space:nowrap}
+    /* Contenido general */
+    main{padding:14px 12px}
+    h2.section{font-size:18px;margin-bottom:12px}
+    .panel{padding:14px;margin-bottom:13px;border-radius:12px}
+    .panel h3{font-size:14px;margin-bottom:11px}
+    /* Tarjetas de stats: 2 por fila, más compactas */
+    .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+    .stat{padding:13px}
+    .stat .value{font-size:21px;margin-top:5px}
+    .stat .value[style*="font-size"]{font-size:18px!important}
+    /* Tablas: deslizar horizontal en lugar de cortarse */
+    .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    table{min-width:560px}                                     /* mantiene columnas legibles, se desliza */
+    th,td{padding:9px 11px;font-size:12.5px}
+    th{font-size:10.5px}
+    /* Modales casi a pantalla completa */
+    .modal-bg{padding:12px 8px}
+    .modal{max-width:100%;border-radius:14px}
+    .modal header{padding:14px 16px}
+    .modal .body{padding:16px}
+    .modal footer{padding:13px 16px;flex-wrap:wrap}
+    .row2{grid-template-columns:1fr}                            /* campos en una columna */
+    /* Trackers de comisión */
+    .qrow{grid-template-columns:52px 1fr 70px;gap:8px}
+    .qrow .qc{display:none}
+    .envmonths{gap:7px}
+    .envm{padding:7px 6px}
+    .envm .v{font-size:15px}
+    /* Kanban: columnas un poco más angostas */
+    .col{min-width:240px;width:240px;max-height:none}
+    .board{max-height:none}
+    /* Toast y botones */
+    .toast{left:14px;right:14px;bottom:14px;text-align:center}
+    .toolbar{gap:8px}
+  }
+  @media (max-width:430px){
+    .stats{grid-template-columns:1fr 1fr;gap:8px}
+    .stat .value{font-size:19px}
+    h2.section{font-size:16px}
+    nav.tabs button{padding:7px 11px;font-size:12.5px}
+    .login-inner{padding:28px 22px 26px}
+    .login-card .lmark{width:200px}
+  }
 </style>
 </head>
 <body>
