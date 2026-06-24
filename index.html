@@ -349,6 +349,7 @@
       </select>
       <span style="flex:1"></span>
       <button class="btn ghost sm" onclick="exportLeads()">⬇ CSV</button>
+      <label class="btn ghost sm" style="cursor:pointer">⬆ Importar CSV<input type="file" accept=".csv,text/csv" onchange="importProspectsCSV(event)" style="display:none"></label>
       <button class="btn" onclick="addProspect()">+ Agregar lead</button>
     </div>
     <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Tu bandeja de prospección, tipo hoja de cálculo. Captura empresas y su estatus; cuando marques <b>Interesado</b>, el lead pasa automáticamente al Pipeline.</p>
@@ -1286,6 +1287,27 @@ function convertProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if
   showToast('✅ '+c.name+' pasó al Pipeline como Lead');
 }
 function exportLeads(){let csv='Empresa,Contacto,Telefono,Correo,Status,Vendedor\n';leadScope().forEach(p=>{csv+=`"${(p.name||'').replace(/"/g,'""')}","${p.contact||''}","${p.phone||''}","${p.email||''}","${leadStatusName(p.status)}","${sellerName(p.sellerId)||''}"\n`;});downloadFile('leads.csv',csv);}
+function importProspectsCSV(e){const f=e.target.files[0];if(!f)return;const fname=(f.name||'').toLowerCase();
+  if(/\.(numbers|xlsx|xls|zip|pages|key|ods)$/.test(fname)){showToast('Ese archivo es de Numbers/Excel. Ábrelo y guárdalo como CSV, luego impórtalo.');e.target.value='';return;}
+  const r=new FileReader();
+  r.onload=()=>{try{
+    const raw=String(r.result);
+    const rows=parseCSV(raw); if(rows.length<2){showToast('El CSV no tiene filas de datos.');e.target.value='';return;}
+    const head=rows[0].map(h=>(h||'').trim().toLowerCase());
+    const ix=(...ns)=>{for(const n of ns){const i=head.indexOf(n);if(i>=0)return i;}return -1;};
+    const cE=ix('empresa','nombre'),cC=ix('contacto'),cT=ix('telefono','teléfono','tel'),cM=ix('correo','email'),cS=ix('status','estatus','estado');
+    if(cE<0){showToast('Falta la columna "Empresa" (o "Nombre"). Usa el formato del CSV que exportas.');e.target.value='';return;}
+    const sId=v=>{v=(v||'').trim().toLowerCase();if(!v)return 'nuevo';const a=LEAD_STATUSES.find(s=>s.id===v);if(a)return a.id;const b=LEAD_STATUSES.find(s=>s.name.toLowerCase()===v);return b?b.id:'nuevo';};
+    const sid=isAdmin()?(activeSeller()!=='all'?activeSeller():(state.sellers[0]?state.sellers[0].id:null)):currentSellerId();
+    state.prospects=state.prospects||[]; let added=0,skip=0;
+    for(let i=1;i<rows.length;i++){const r0=rows[i];const name=(r0[cE]||'').trim();if(!name){skip++;continue;}
+      const p={id:uid(),name,sellerId:sid,contact:cC>=0?(r0[cC]||'').trim():'',phone:cT>=0?(r0[cT]||'').trim():'',email:cM>=0?(r0[cM]||'').trim():'',status:cS>=0?sId(r0[cS]):'nuevo',notes:'',createdAt:nowISO(),updatedAt:nowISO()};
+      state.prospects.unshift(p); ecoMarkProspect(p.id); added++;}
+    save(); renderLeads();
+    showToast(added?('✅ '+added+' lead(s) importado(s)'+(skip?' · '+skip+' vacías omitidas':'')):'No se importó ninguna fila (revisa que tengan empresa).');
+  }catch(err){showToast('Error al leer el CSV: '+err.message);} e.target.value='';};
+  r.readAsText(f);
+}
 
 /* ---------- VENDEDORES ---------- */
 function vendMetrics(sid,mk){const cl=state.clients.filter(c=>c.sellerId===sid);const cartera=cl.filter(c=>CLOSED_STAGES_SET.includes(c.stage));const activos=cl.filter(c=>c.stage==='activo');const onboarding=cl.filter(c=>c.stage==='contrato'||c.stage==='integracion');const leads=cl.filter(c=>!CLOSED_STAGES_SET.includes(c.stage));let fact=0;cl.forEach(c=>fact+=clientBilling(c.id,mk)?.amount||0);const com=computeCommission(sid,{type:'month',mk}).total;let vn=0,firmados=0,invMes=0,facturaronMes=0,demosMes=0,calcsMes=0;cl.forEach(c=>{if(closeMonth(c)===mk){vn+=ventaBase(c);firmados++;}const ai=stageDate(c,'activo')||stageDate(c,'integracion');if(ai&&ai.slice(0,7)===mk)invMes++;if(firstBillMonth(c)===mk)facturaronMes++;const dd=stageDate(c,'demo');if(dd&&dd.slice(0,7)===mk)demosMes++;const cd=stageDate(c,'calc');if(cd&&cd.slice(0,7)===mk)calcsMes++;});return {cl,cartera,activos,onboarding,leads:leads.length,fact,com,vn,firmados,invMes,facturaronMes,demosMes,calcsMes};}
