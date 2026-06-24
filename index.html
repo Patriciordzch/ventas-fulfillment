@@ -33,6 +33,16 @@
   nav.tabs button{background:transparent;border:none;color:var(--muted);padding:9px 15px;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;transition:.12s}
   nav.tabs button:hover{background:var(--surface-2);color:var(--navy)}
   nav.tabs button.active{background:var(--navy);color:#fff}
+  .navgroup{position:relative;display:inline-block}
+  .navgroup-btn{background:transparent;border:none;color:var(--muted);padding:9px 13px;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;transition:.12s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .navgroup-btn:hover{background:var(--surface-2);color:var(--navy)}
+  .navgroup-btn .car{font-size:9px;opacity:.6}
+  .navgroup.active .navgroup-btn{background:var(--navy);color:#fff}
+  .navgroup.open .navgroup-btn{background:var(--surface-2);color:var(--navy)}
+  .navmenu{position:absolute;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:6px;display:none;flex-direction:column;gap:2px;z-index:60;min-width:200px}
+  .navgroup.open .navmenu{display:flex}
+  .navmenu button{justify-content:flex-start;text-align:left;width:100%}
+  .navmenu button.active{background:var(--navy);color:#fff}
   .spacer{flex:1}
   .seller-filter{display:flex;align-items:center;gap:8px;flex-shrink:0}
   .seller-filter .lbl{color:var(--muted);font-size:13px}
@@ -276,15 +286,21 @@
   </div>
   <nav class="tabs" id="tabs">
     <button data-view="dashboard" class="active">Dashboard</button>
-    <button data-view="pipeline">Pipeline</button>
-    <button data-view="proyeccion">Proyección</button>
-    <button data-view="clientes">Clientes</button>
-    <button data-view="facturacion">Facturación</button>
-    <button data-view="vendedores">Vendedores</button>
-    <button data-view="comisiones">Comisiones</button>
-    <button data-view="cobros">Comprobantes</button>
-    <button data-view="usuarios">Usuarios</button>
-    <button data-view="config">Configuración</button>
+    <div class="navgroup"><button type="button" class="navgroup-btn">Ventas <span class="car">▾</span></button><div class="navmenu">
+      <button data-view="pipeline">Pipeline</button>
+      <button data-view="proyeccion">Proyección</button>
+      <button data-view="clientes">Clientes</button>
+    </div></div>
+    <div class="navgroup"><button type="button" class="navgroup-btn">Equipo <span class="car">▾</span></button><div class="navmenu">
+      <button data-view="vendedores">Vendedores</button>
+      <button data-view="comisiones">Comisiones</button>
+      <button data-view="cobros">Comprobantes</button>
+    </div></div>
+    <div class="navgroup"><button type="button" class="navgroup-btn">Administración <span class="car">▾</span></button><div class="navmenu">
+      <button data-view="facturacion">Facturación</button>
+      <button data-view="usuarios">Usuarios</button>
+      <button data-view="config">Configuración</button>
+    </div></div>
   </nav>
   <div class="spacer"></div>
   <div class="seller-filter" id="sellerFilterWrap">
@@ -1165,11 +1181,19 @@ async function autoSyncCalc(){
 }
 function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}}
 
-document.getElementById('tabs').addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;goView(e.target.dataset.view);});
+function closeNavMenus(){document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open'));}
+document.getElementById('tabs').addEventListener('click',e=>{
+  const gb=e.target.closest('.navgroup-btn');
+  if(gb){const g=gb.parentNode;const wasOpen=g.classList.contains('open');closeNavMenus();if(!wasOpen)g.classList.add('open');return;}
+  const vb=e.target.closest('button[data-view]');
+  if(vb){goView(vb.dataset.view);closeNavMenus();}
+});
+document.addEventListener('click',e=>{if(!e.target.closest('.navgroup'))closeNavMenus();});
 function goView(v){
   const adminOnly=['facturacion','usuarios','config'];
   if(adminOnly.includes(v)&&!isAdmin())v='dashboard';
-  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('nav.tabs button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('.navgroup').forEach(g=>g.classList.toggle('active',!!g.querySelector('button[data-view="'+v+'"]')));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
   currentView=v;
   if(v==='usuarios')renderUsuarios();
@@ -1294,10 +1318,12 @@ function ensureViewerSeller(){ if(isAdmin()||!currentUser)return null; return li
 function currentSellerId(){ return linkSellerToUser(); }
 function applyPermissions(){
   const admin=isAdmin();
-  document.querySelectorAll('nav.tabs button').forEach(b=>{
+  document.querySelectorAll('nav.tabs button[data-view]').forEach(b=>{
     const adminOnly=['facturacion','usuarios','config'].includes(b.dataset.view);
     b.style.display=(adminOnly&&!admin)?'none':'';
   });
+  // Ocultar un grupo completo si ninguno de sus ítems es visible (ej. Administración para vendedores)
+  document.querySelectorAll('.navgroup').forEach(g=>{const items=[...g.querySelectorAll('button[data-view]')];const any=items.some(b=>b.style.display!=='none');g.style.display=any?'':'none';});
   // El tab "Vendedores" para un vendedor solo muestra lo suyo → se llama "Mi desempeño".
   const vlabel=admin?'Vendedores':'Mi desempeño';
   const vbtn=document.querySelector('nav.tabs button[data-view="vendedores"]'); if(vbtn)vbtn.textContent=vlabel;
