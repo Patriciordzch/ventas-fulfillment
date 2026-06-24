@@ -29,7 +29,8 @@
   .brand .brand-logo-top{height:30px;width:auto;display:block}
   .brand .brand-div{width:1px;height:24px;background:var(--border)}
   .brand .brand-tag{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
-  nav.tabs{display:flex;gap:2px;margin-left:6px;flex-wrap:wrap}
+  nav.tabs{display:flex;gap:2px;margin-left:6px;flex-wrap:nowrap}
+  .navgroup-right .navmenu{left:auto;right:0}
   nav.tabs button{background:transparent;border:none;color:var(--muted);padding:9px 15px;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;transition:.12s}
   nav.tabs button:hover{background:var(--surface-2);color:var(--navy)}
   nav.tabs button.active{background:var(--navy);color:#fff}
@@ -295,12 +296,12 @@
       <button data-view="comisiones">Comisiones</button>
       <button data-view="cobros">Comprobantes</button>
     </div></div>
-    <div class="navgroup"><button type="button" class="navgroup-btn">Ajustes <span class="car">▾</span></button><div class="navmenu">
-      <button data-view="usuarios">Usuarios</button>
-      <button data-view="config">Configuración</button>
-    </div></div>
   </nav>
   <div class="spacer"></div>
+  <div class="navgroup navgroup-right" id="ajustesGroup"><button type="button" class="navgroup-btn">Ajustes <span class="car">▾</span></button><div class="navmenu">
+    <button data-view="usuarios">Usuarios</button>
+    <button data-view="config">Configuración</button>
+  </div></div>
   <div class="seller-filter" id="sellerFilterWrap">
     <span class="lbl">Vendedor</span>
     <select id="globalSeller"></select>
@@ -1180,7 +1181,7 @@ async function autoSyncCalc(){
 function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}}
 
 function closeNavMenus(){document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open'));}
-document.getElementById('tabs').addEventListener('click',e=>{
+document.querySelector('header.top').addEventListener('click',e=>{
   const gb=e.target.closest('.navgroup-btn');
   if(gb){const g=gb.parentNode;const wasOpen=g.classList.contains('open');closeNavMenus();if(!wasOpen)g.classList.add('open');return;}
   const vb=e.target.closest('button[data-view]');
@@ -1190,7 +1191,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.navgroup'))closeNav
 function goView(v){
   const adminOnly=['facturacion','usuarios','config'];
   if(adminOnly.includes(v)&&!isAdmin())v='dashboard';
-  document.querySelectorAll('nav.tabs button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('header.top button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.navgroup').forEach(g=>g.classList.toggle('active',!!g.querySelector('button[data-view="'+v+'"]')));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
   currentView=v;
@@ -1316,7 +1317,7 @@ function ensureViewerSeller(){ if(isAdmin()||!currentUser)return null; return li
 function currentSellerId(){ return linkSellerToUser(); }
 function applyPermissions(){
   const admin=isAdmin();
-  document.querySelectorAll('nav.tabs button[data-view]').forEach(b=>{
+  document.querySelectorAll('header.top button[data-view]').forEach(b=>{
     const adminOnly=['facturacion','usuarios','config'].includes(b.dataset.view);
     b.style.display=(adminOnly&&!admin)?'none':'';
   });
