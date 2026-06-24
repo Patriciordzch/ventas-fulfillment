@@ -1021,7 +1021,7 @@ function drillClients(title,clients,cols,note){
 function clsForSeller(sid){return sid&&sid!=='all'?state.clients.filter(c=>c.sellerId===sid):state.clients.slice();}
 // Drill de facturación (usa el año y vendedor seleccionados)
 function drillBilling(kind,arg){
-  const year=billYearVal();const bs=document.getElementById('billSeller')?document.getElementById('billSeller').value:'all';
+  const year=billYearVal();const bs=isAdmin()?(document.getElementById('billSeller')?document.getElementById('billSeller').value:'all'):currentSellerId();
   const months=Array.from({length:12},(_,i)=>year+'-'+String(i+1).padStart(2,'0'));
   const totOf=c=>months.reduce((a,mk)=>a+(clientBilling(c.id,mk)?.amount||0),0);
   let cls=clsForSeller(bs);
@@ -1231,7 +1231,7 @@ document.querySelector('header.top').addEventListener('click',e=>{
 });
 document.addEventListener('click',e=>{if(!e.target.closest('.navgroup'))closeNavMenus();});
 function goView(v){
-  const adminOnly=['facturacion','usuarios','config'];
+  const adminOnly=['usuarios','config'];
   if(adminOnly.includes(v)&&!isAdmin())v='dashboard';
   document.querySelectorAll('header.top button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.navgroup').forEach(g=>g.classList.toggle('active',!!g.querySelector('button[data-view="'+v+'"]')));
@@ -1425,7 +1425,7 @@ function currentSellerId(){ return linkSellerToUser(); }
 function applyPermissions(){
   const admin=isAdmin();
   document.querySelectorAll('header.top button[data-view]').forEach(b=>{
-    const adminOnly=['facturacion','usuarios','config'].includes(b.dataset.view);
+    const adminOnly=['usuarios','config'].includes(b.dataset.view);
     b.style.display=(adminOnly&&!admin)?'none':'';
   });
   // Ocultar un grupo completo si ninguno de sus ítems es visible (ej. Administración para vendedores)
@@ -1436,7 +1436,7 @@ function applyPermissions(){
   const vtit=document.getElementById('vendTitle'); if(vtit)vtit.textContent=vlabel;
   const sf=document.getElementById('sellerFilterWrap'); if(sf)sf.style.display=admin?'':'none';
   ['pipeSeller','billSeller','cliSeller','projSeller','cobrosSeller','vendPick'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=admin?'':'none';});
-  if(!admin&&['facturacion','usuarios','config'].includes(currentView))goView('dashboard');
+  if(!admin&&['usuarios','config'].includes(currentView))goView('dashboard');
 }
 
 function buildSellerSelectors(){const o='<option value="all">Todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('globalSeller').innerHTML=o;const bsel=document.getElementById('billSeller');if(bsel)bsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const byel=document.getElementById('billYear');if(byel){const cur=byel.value;const yrs=new Set([new Date().getFullYear()]);Object.values(state.billing||{}).forEach(mm=>Object.keys(mm).forEach(k=>yrs.add(+k.slice(0,4))));const arr=[...yrs].sort((a,b)=>b-a);byel.innerHTML=arr.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur&&arr.includes(+cur))byel.value=cur;}const psel=document.getElementById('pipeSeller');if(psel)psel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const csel=document.getElementById('cliSeller');if(csel)csel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const prsel=document.getElementById('projSeller');if(prsel){const cur=prsel.value;prsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)prsel.value=cur;}const cosel=document.getElementById('cobrosSeller');if(cosel){const cur=cosel.value;cosel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)cosel.value=cur;}const vpk=document.getElementById('vendPick');if(vpk){const cur=vpk.value;vpk.innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur&&state.sellers.find(s=>s.id===cur))vpk.value=cur;}document.getElementById('cmSeller').innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('cmStage').innerHTML=STAGES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');}
@@ -2242,7 +2242,7 @@ function topSellerNuevaMonth(mk){const m={};state.clients.filter(c=>closeMonth(c
 function monthSellerStats(sid,mk){let cartera=0,orders=0,nClients=0;state.clients.filter(c=>c.sellerId===sid).forEach(c=>{const b=clientBilling(c.id,mk);if(b&&b.amount){cartera+=b.amount;orders+=b.orders||0;nClients++;}});let vn=0;clientsClosedInMonth(sid,mk).forEach(c=>vn+=ventaBase(c));return {cartera,orders,nClients,ventaNueva:vn};}
 function renderBilling(){
   const year=billYearVal();
-  const bs=document.getElementById('billSeller')?document.getElementById('billSeller').value:'all';
+  const bs=isAdmin()?(document.getElementById('billSeller')?document.getElementById('billSeller').value:'all'):currentSellerId();
   const months=Array.from({length:12},(_,i)=>year+'-'+String(i+1).padStart(2,'0'));
   const mesLbl=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   let cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&(months.some(mk=>state.billing[c.id]?.[mk])||(opMonth1(c)&&(+opMonth1(c).slice(0,4))<=year&&CLOSED_STAGES_SET.includes(c.stage))));
