@@ -24,18 +24,19 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;line-height:1.45}
   /* HEADER */
-  header.top{display:flex;align-items:center;gap:18px;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;box-shadow:0 1px 0 rgba(16,40,80,.03)}
-  .brand{display:flex;align-items:center;gap:11px;flex-shrink:0}
-  .brand .brand-logo-top{height:30px;width:auto;display:block}
-  .brand .brand-div{width:1px;height:24px;background:var(--border)}
-  .brand .brand-tag{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
-  nav.tabs{display:flex;gap:2px;margin-left:6px;flex-wrap:nowrap}
+  header.top{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;box-shadow:0 1px 0 rgba(16,40,80,.03)}
+  .brand{display:flex;align-items:center;gap:9px;flex-shrink:0}
+  .brand .brand-logo-top{height:28px;width:auto;display:block}
+  .brand .brand-div{width:1px;height:22px;background:var(--border)}
+  .brand .brand-tag{font-size:11.5px;font-weight:600;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
+  @media(max-width:1340px){.brand .brand-div,.brand .brand-tag{display:none}}
+  nav.tabs{display:flex;gap:1px;margin-left:4px;flex-wrap:nowrap}
   .navgroup-right .navmenu{left:auto;right:0}
-  nav.tabs button{background:transparent;border:none;color:var(--muted);padding:9px 15px;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;transition:.12s}
+  nav.tabs button{background:transparent;border:none;color:var(--muted);padding:8px 11px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:600;transition:.12s;white-space:nowrap}
   nav.tabs button:hover{background:var(--surface-2);color:var(--navy)}
   nav.tabs button.active{background:var(--navy);color:#fff}
   .navgroup{position:relative;display:inline-block}
-  .navgroup-btn{background:transparent;border:none;color:var(--muted);padding:9px 13px;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;transition:.12s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .navgroup-btn{background:transparent;border:none;color:var(--muted);padding:8px 11px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:600;transition:.12s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
   .navgroup-btn:hover{background:var(--surface-2);color:var(--navy)}
   .navgroup-btn .car{font-size:9px;opacity:.6}
   .navgroup.active .navgroup-btn{background:var(--navy);color:#fff}
@@ -45,8 +46,9 @@
   .navmenu button{justify-content:flex-start;text-align:left;width:100%}
   .navmenu button.active{background:var(--navy);color:#fff}
   .spacer{flex:1}
-  .seller-filter{display:flex;align-items:center;gap:8px;flex-shrink:0}
-  .seller-filter .lbl{color:var(--muted);font-size:13px}
+  .seller-filter{display:flex;align-items:center;gap:7px;flex-shrink:0}
+  .seller-filter .lbl{color:var(--muted);font-size:12.5px}
+  #userChip{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
   select,input,textarea{background:var(--surface);border:1px solid var(--border-2);color:var(--txt);padding:8px 11px;border-radius:9px;font-size:13px;font-family:inherit}
   select:focus,input:focus,textarea:focus{outline:none;border-color:var(--navy-l);box-shadow:0 0 0 3px rgba(10,92,184,.12)}
   button.btn{background:var(--navy);color:#fff;border:none;padding:9px 15px;border-radius:9px;cursor:pointer;font-weight:600;font-size:13px;transition:.12s;display:inline-flex;align-items:center;gap:6px}
