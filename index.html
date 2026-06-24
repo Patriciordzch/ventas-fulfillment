@@ -811,7 +811,7 @@ const CALC_FIELDS=[
   {k:'packaging',label:'Empaque/mes',type:'num'},
 ];
 // Valores base para que la cotización del cliente siempre renderice (nunca en cero)
-const CALC_DEFAULTS={size:'Medium',orders:300,itemsPerOrder:2,itemsShipped:600,m3:15,entries:4,entryType:'Paqueteria',localShip:120,natShip:180,labeling:0,giftCard:0,packaging:0};
+const CALC_DEFAULTS={size:'Small',orders:50,itemsPerOrder:1,itemsShipped:50,m3:2,entries:1,entryType:'Paqueteria',localShip:25,natShip:25,labeling:0,giftCard:0,packaging:0};
 function withCalcDefaults(cp){const r=Object.assign({},cp||{});CALC_FIELDS.forEach(f=>{const v=r[f.k];if(f.type==='num'){if(v===''||v===undefined||v===null||+v===0)r[f.k]=CALC_DEFAULTS[f.k];}else{if(!v)r[f.k]=CALC_DEFAULTS[f.k];}});return r;}
 function calcBase(){ return (state.calc&&state.calc.linkBase)||CALC_BASE_DEFAULT; }
 function buildCalcLink(cp,slug){
