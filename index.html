@@ -289,6 +289,7 @@
   </div>
   <nav class="tabs" id="tabs">
     <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="leads">Leads</button>
     <button data-view="pipeline">Pipeline</button>
     <button data-view="proyeccion">Proyección</button>
     <button data-view="clientes">Clientes</button>
@@ -334,6 +335,25 @@
   </section>
 
   <!-- PIPELINE -->
+  <section class="view" id="view-leads">
+    <div class="toolbar">
+      <h2 class="section" style="margin:0">Leads <span class="muted" style="font-weight:500;font-size:14px">· prospección</span></h2>
+      <select id="leadsStatusFilter" onchange="renderLeads()">
+        <option value="all">Status: todos</option>
+        <option value="nuevo">Nuevo</option>
+        <option value="mensaje">Mensaje enviado</option>
+        <option value="nocontesta">No contestó</option>
+        <option value="futuro">Interés a futuro</option>
+        <option value="no">No interesado</option>
+        <option value="interesado">Interesado</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" onclick="exportLeads()">⬇ CSV</button>
+      <button class="btn" onclick="addProspect()">+ Agregar lead</button>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Tu bandeja de prospección, tipo hoja de cálculo. Captura empresas y su estatus; cuando marques <b>Interesado</b>, el lead pasa automáticamente al Pipeline.</p>
+    <div id="leadsContent"></div>
+  </section>
   <section class="view" id="view-pipeline">
     <div class="toolbar">
       <h2 class="section" style="margin:0">Pipeline de negociaciones</h2>
@@ -612,6 +632,7 @@
       <div class="row2">
         <div class="field"><label>Servicio</label><select id="cmService"><option>Fulfillment</option><option>WMS</option><option>Paquetería</option><option>Mixto</option></select></div>
         <div class="field"><label>Fuente del lead</label><select id="cmSource"><option value="">—</option><option>Prospección</option><option>Referido de Envía</option><option>Google</option><option>Calendly</option><option>Otro</option></select></div>
+        <div class="field"><label>Estatus de interés</label><select id="cmLeadStatus"><option value="">— normal</option><option value="futuro">Interés a futuro</option><option value="interesado">Interesado</option><option value="no">No interesado</option></select></div>
       </div>
       <div class="row2">
         <div class="field"><label>Envíos mensuales estimados</label><input type="number" id="cmShipments" placeholder="0"></div>
@@ -678,6 +699,17 @@ const STAGES = [
   {id:'integracion',name:'Integración + inventario digital', color:'#0d9488'},
   {id:'activo',     name:'Cliente activo (Inventario en Almacén)', color:'#00ab10'},
 ];
+// Estatus de prospección (pestaña Leads) + etiqueta "Interés a futuro" para el pipeline
+const LEAD_STATUSES=[
+  {id:'nuevo',     name:'Nuevo',            color:'#64748b'},
+  {id:'mensaje',   name:'Mensaje enviado',  color:'#1e6fd9'},
+  {id:'nocontesta',name:'No contestó',      color:'#d97706'},
+  {id:'futuro',    name:'Interés a futuro', color:'#7c3aed'},
+  {id:'no',        name:'No interesado',    color:'#c0392b'},
+  {id:'interesado',name:'Interesado',       color:'#00ab10'},
+];
+function leadStatusName(id){const s=LEAD_STATUSES.find(x=>x.id===id);return s?s.name:'';}
+function leadStatusColor(id){const s=LEAD_STATUSES.find(x=>x.id===id);return s?s.color:'#64748b';}
 // Migración de etapas antiguas
 const STAGE_MIGRATE={propuesta:'aceptada'};
 
@@ -928,7 +960,13 @@ function seedDemo(force){
   proj('Snack Time',8500,340);           // Tier 1
   // Timeline coherente por cliente
   clients.forEach(c=>buildTimeline(c,billing));
-  state={sellers,clients,billing,commission:JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),
+  const prospects=[
+    {id:uid(),name:'Calzado Norte',sellerId:'s1',contact:'Rocío H.',phone:'55 1010 2020',email:'rocio@calzadonorte.mx',status:'mensaje',notes:'',createdAt:nowISO(),updatedAt:nowISO()},
+    {id:uid(),name:'Dulces Mara',sellerId:'s1',contact:'Mara T.',phone:'',email:'ventas@dulcesmara.mx',status:'futuro',notes:'Retomar en Q4',createdAt:nowISO(),updatedAt:nowISO()},
+    {id:uid(),name:'AutoPartes GT',sellerId:'s2',contact:'Gerardo T.',phone:'55 3030 4040',email:'',status:'nocontesta',notes:'',createdAt:nowISO(),updatedAt:nowISO()},
+    {id:uid(),name:'Velas Aroma',sellerId:'s2',contact:'',phone:'',email:'hola@velasaroma.mx',status:'nuevo',notes:'Llegó por Instagram',createdAt:nowISO(),updatedAt:nowISO()},
+  ];
+  state={sellers,clients,billing,prospects,commission:JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),
     api:{base:'https://api.fulfillment.envia.com',endpoint:'',authType:'bearer',token:'',keyName:'',connected:false},
     calc:{url:CALC_SUPABASE_DEFAULT,key:CALC_KEY_DEFAULT,table:'negotiations_with_seller',endpoint:'',linkBase:CALC_BASE_DEFAULT,connected:true}};
   save();
@@ -1145,6 +1183,7 @@ function buildStageFilters(){
   const cs=document.getElementById('cliStage'); if(cs)cs.innerHTML='<option value="all">Etapa: todas</option>'+STAGES.filter(s=>['contrato','integracion','activo'].includes(s.id)).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
 }
 function initUI(){
+  if(!state.prospects)state.prospects=[];
   let mig=false; (state.clients||[]).forEach(c=>{if(STAGE_MIGRATE[c.stage]){c.stage=STAGE_MIGRATE[c.stage];mig=true;} const need=stageIdx(c.stage)+1; if(!c.history||c.history.length<need){buildTimeline(c,state.billing);mig=true;} if(!c.updatedAt){c.updatedAt=c.createdAt||nowISO();} if(!c.createdAt){c.createdAt=c.updatedAt;}});
   Object.values(state.billing||{}).forEach(ms=>Object.values(ms).forEach(b=>{if(b.orders===undefined){b.orders=0;mig=true;}}));
   // Migración: quitar vendedores placeholder "Vendedor" (creados por negociaciones sin nombre); sus clientes quedan sin asignar.
@@ -1180,7 +1219,7 @@ async function autoSyncCalc(){
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
   }catch(e){}
 }
-function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}}
+function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}try{renderLeads();}catch(e){}}
 
 function closeNavMenus(){document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open'));}
 document.querySelector('header.top').addEventListener('click',e=>{
@@ -1200,9 +1239,53 @@ function goView(v){
   if(v==='usuarios')renderUsuarios();
   if(v==='vendedores')renderVendedores();
   if(v==='proyeccion')renderProyeccion();
+  if(v==='leads')renderLeads();
   if(v==='cobros')renderCobros();
   if(['pipeline','dashboard','clientes','proyeccion'].includes(v))autoSyncCalc();
 }
+/* ---------- LEADS (prospección, tipo hoja de cálculo) ---------- */
+function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function leadScope(){const all=state.prospects||[];if(isAdmin())return all;const sid=currentSellerId();return all.filter(p=>!p.sellerId||p.sellerId===sid);}
+function renderLeads(){
+  const el=document.getElementById('leadsContent'); if(!el)return;
+  const fEl=document.getElementById('leadsStatusFilter'); const f=fEl?fEl.value:'all';
+  let list=leadScope().filter(p=>f==='all'||(p.status||'nuevo')===f).slice().sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const adm=isAdmin();
+  const opts=p=>LEAD_STATUSES.map(s=>`<option value="${s.id}" ${(p.status||'nuevo')===s.id?'selected':''}>${s.name}</option>`).join('');
+  const cnt=leadScope().length;
+  if(!list.length){el.innerHTML=`<p class="muted">${cnt?'Sin leads en este filtro.':'Aún no hay leads. Usa “+ Agregar lead” para empezar tu prospección.'}</p>`;return;}
+  const rows=list.map(p=>`<tr data-id="${p.id}">
+    <td><input value="${escAttr(p.name)}" placeholder="Empresa" onchange="updProspect('${p.id}','name',this.value)" style="min-width:160px"></td>
+    <td><input value="${escAttr(p.contact)}" placeholder="Contacto" onchange="updProspect('${p.id}','contact',this.value)" style="min-width:120px"></td>
+    <td><input value="${escAttr(p.phone)}" placeholder="Teléfono" onchange="updProspect('${p.id}','phone',this.value)" style="min-width:120px"></td>
+    <td><input value="${escAttr(p.email)}" placeholder="correo@empresa.com" onchange="updProspect('${p.id}','email',this.value)" style="min-width:170px"></td>
+    <td><select onchange="updProspect('${p.id}','status',this.value)" style="border-left:4px solid ${leadStatusColor(p.status)};font-weight:600">${opts(p)}</select></td>
+    ${adm?`<td>${sellerName(p.sellerId)||'—'}</td>`:''}
+    <td style="white-space:nowrap"><button class="btn ghost sm" title="Pasar al Pipeline como Lead" onclick="convertProspect('${p.id}')">→ Pipeline</button> <button class="btn ghost sm" title="Eliminar" onclick="deleteProspect('${p.id}')">✕</button></td>
+  </tr>`).join('');
+  el.innerHTML=`<div class="tablewrap"><table><thead><tr><th>Empresa</th><th>Contacto</th><th>Teléfono</th><th>Correo</th><th>Status</th>${adm?'<th>Vendedor</th>':''}<th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function addProspect(){
+  const sid=isAdmin()?(activeSeller()!=='all'?activeSeller():(state.sellers[0]?state.sellers[0].id:null)):currentSellerId();
+  const p={id:uid(),name:'',contact:'',phone:'',email:'',status:'nuevo',sellerId:sid,notes:'',createdAt:nowISO(),updatedAt:nowISO()};
+  (state.prospects=state.prospects||[]).unshift(p); ecoMarkProspect(p.id); save(); renderLeads();
+  setTimeout(()=>{const i=document.querySelector('#leadsContent tr[data-id="'+p.id+'"] input'); if(i)i.focus();},40);
+}
+function updProspect(id,field,val){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;
+  if(field==='status'&&val==='interesado'){p.status=val;convertProspect(id);return;}
+  p[field]=val;p.updatedAt=nowISO();ecoMarkProspect(id);save();
+  if(field==='status')renderLeads();
+}
+function deleteProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;if(!confirm('¿Eliminar este lead de prospección?'))return;state.prospects=state.prospects.filter(x=>x.id!==id);ecoDeleteProspect(id);save();renderLeads();showToast('Lead eliminado');}
+function convertProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;
+  if(!(p.name||'').trim()){showToast('Ponle nombre de empresa antes de pasarlo al Pipeline');renderLeads();return;}
+  const c={id:uid(),name:p.name,sellerId:p.sellerId||(isAdmin()?(state.sellers[0]?state.sellers[0].id:null):currentSellerId()),stage:'lead',contact:p.contact||'',email:p.email||'',phone:p.phone||'',service:'Fulfillment',source:'Prospección',shipments:0,closeDate:'',startMonth:'',notes:p.notes||'',docs:{},history:[{stage:'lead',at:nowISO()}],createdAt:nowISO(),updatedAt:nowISO()};
+  state.clients.push(c); ecoMarkClient(c.id);
+  state.prospects=state.prospects.filter(x=>x.id!==id); ecoDeleteProspect(id);
+  save(); renderLeads(); try{renderBoard();renderDashboard();}catch(e){}
+  showToast('✅ '+c.name+' pasó al Pipeline como Lead');
+}
+function exportLeads(){let csv='Empresa,Contacto,Telefono,Correo,Status,Vendedor\n';leadScope().forEach(p=>{csv+=`"${(p.name||'').replace(/"/g,'""')}","${p.contact||''}","${p.phone||''}","${p.email||''}","${leadStatusName(p.status)}","${sellerName(p.sellerId)||''}"\n`;});downloadFile('leads.csv',csv);}
 
 /* ---------- VENDEDORES ---------- */
 function vendMetrics(sid,mk){const cl=state.clients.filter(c=>c.sellerId===sid);const cartera=cl.filter(c=>CLOSED_STAGES_SET.includes(c.stage));const activos=cl.filter(c=>c.stage==='activo');const onboarding=cl.filter(c=>c.stage==='contrato'||c.stage==='integracion');const leads=cl.filter(c=>!CLOSED_STAGES_SET.includes(c.stage));let fact=0;cl.forEach(c=>fact+=clientBilling(c.id,mk)?.amount||0);const com=computeCommission(sid,{type:'month',mk}).total;let vn=0,firmados=0,invMes=0,facturaronMes=0,demosMes=0,calcsMes=0;cl.forEach(c=>{if(closeMonth(c)===mk){vn+=ventaBase(c);firmados++;}const ai=stageDate(c,'activo')||stageDate(c,'integracion');if(ai&&ai.slice(0,7)===mk)invMes++;if(firstBillMonth(c)===mk)facturaronMes++;const dd=stageDate(c,'demo');if(dd&&dd.slice(0,7)===mk)demosMes++;const cd=stageDate(c,'calc');if(cd&&cd.slice(0,7)===mk)calcsMes++;});return {cl,cartera,activos,onboarding,leads:leads.length,fact,com,vn,firmados,invMes,facturaronMes,demosMes,calcsMes};}
@@ -1535,7 +1618,7 @@ function renderBoard(){
   document.getElementById('board').innerHTML=shownStages.map(st=>{const list=clients.filter(c=>c.stage===st.id).sort((a,b)=>Date.parse(b.updatedAt||0)-Date.parse(a.updatedAt||0));const cards=list.map(cardHTML).join('')||'<div class="muted" style="font-size:12px;padding:10px;text-align:center">—</div>';return `<div class="col" data-stage="${st.id}"><h3><span><span class="dot" style="background:${st.color}"></span>${st.name}</span><span class="count">${list.length}</span></h3><div class="cards" data-stage="${st.id}">${cards}</div></div>`;}).join('');
   attachDnD();
 }
-function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;const f=clientBilling(c.id,curMonth())?.amount;const st=STAGES.find(s=>s.id===c.stage);const _td=new Date().toISOString().slice(0,10);const _due=(c.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=_td).sort((a,b)=>a.due<b.due?-1:1)[0];const _badge=_due?`<span class="tag" style="border-color:#f5d9a8;background:#fdf6e9;color:${_due.due<_td?'#c0392b':'#d97706'}">🔔 ${_due.due<_td?'tarea vencida':'tarea hoy'}</span>`:'';return `<div class="card" draggable="true" data-id="${c.id}" onclick="openClientModal('${c.id}')" style="border-left-color:${st.color}"><div class="name">${c.name}</div><div class="meta"><span>👤 ${c.contact||'sin contacto'}</span><span>🏷️ ${sellerName(c.sellerId)} · ${c.service||'—'}</span>${c.source?`<span>📍 ${c.source}</span>`:''}${f?`<span>💵 ${money(f)} este mes</span>`:''}${c.updatedAt?`<span title="${relativeTime(c.updatedAt)}">🕒 ${dateFmt(c.updatedAt)}</span>`:''}</div><div class="tags">${_badge}${c.shipments?`<span class="tag">📦 ${numFmt(c.shipments)}/mes</span>`:(PRE_CALC_STAGES.includes(c.stage)&&projShipOf(c)>0?`<span class="tag">📦 ${numFmt(projShipOf(c))}/mes proy.</span>`:'')}${PRE_CALC_STAGES.includes(c.stage)&&projMonthly(c)>0?`<span class="tag" style="border-color:#cdd8ea;color:var(--navy)">📊 ${money(projMonthly(c))}/mes proy. · ${projTier(projMonthly(c)).name}</span>`:''}${c.calcStatus?`<span class="tag calc">🧮 ${c.calcStatus}</span>`:(c.fromCalc?'<span class="tag calc">🧮 calculadora</span>':'')}${(c.calcNegId||c.fromCalc)?`<span class="tag green">📎 ${(c.calcDocs||[]).length}/${CALC_DOC_TYPES.length} docs</span>`:''}</div><div style="margin-top:9px;display:flex;gap:6px"><button class="card-link-btn" onclick="copyClientCalcLink('${c.id}',event)">🔗 Copiar link</button><button class="card-link-btn" onclick="openClientCalcLink('${c.id}',event)">↗</button></div></div>`;}
+function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;const f=clientBilling(c.id,curMonth())?.amount;const st=STAGES.find(s=>s.id===c.stage);const _td=new Date().toISOString().slice(0,10);const _due=(c.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=_td).sort((a,b)=>a.due<b.due?-1:1)[0];const _badge=_due?`<span class="tag" style="border-color:#f5d9a8;background:#fdf6e9;color:${_due.due<_td?'#c0392b':'#d97706'}">🔔 ${_due.due<_td?'tarea vencida':'tarea hoy'}</span>`:'';return `<div class="card" draggable="true" data-id="${c.id}" onclick="openClientModal('${c.id}')" style="border-left-color:${st.color}"><div class="name">${c.name}</div><div class="meta"><span>👤 ${c.contact||'sin contacto'}</span><span>🏷️ ${sellerName(c.sellerId)} · ${c.service||'—'}</span>${c.source?`<span>📍 ${c.source}</span>`:''}${f?`<span>💵 ${money(f)} este mes</span>`:''}${c.updatedAt?`<span title="${relativeTime(c.updatedAt)}">🕒 ${dateFmt(c.updatedAt)}</span>`:''}</div><div class="tags">${_badge}${c.leadStatus?`<span class="tag" style="border-color:${leadStatusColor(c.leadStatus)}66;background:${leadStatusColor(c.leadStatus)}14;color:${leadStatusColor(c.leadStatus)};font-weight:700">${c.leadStatus==='futuro'?'⏳ ':''}${leadStatusName(c.leadStatus)}</span>`:''}${c.shipments?`<span class="tag">📦 ${numFmt(c.shipments)}/mes</span>`:(PRE_CALC_STAGES.includes(c.stage)&&projShipOf(c)>0?`<span class="tag">📦 ${numFmt(projShipOf(c))}/mes proy.</span>`:'')}${PRE_CALC_STAGES.includes(c.stage)&&projMonthly(c)>0?`<span class="tag" style="border-color:#cdd8ea;color:var(--navy)">📊 ${money(projMonthly(c))}/mes proy. · ${projTier(projMonthly(c)).name}</span>`:''}${c.calcStatus?`<span class="tag calc">🧮 ${c.calcStatus}</span>`:(c.fromCalc?'<span class="tag calc">🧮 calculadora</span>':'')}${(c.calcNegId||c.fromCalc)?`<span class="tag green">📎 ${(c.calcDocs||[]).length}/${CALC_DOC_TYPES.length} docs</span>`:''}</div><div style="margin-top:9px;display:flex;gap:6px"><button class="card-link-btn" onclick="copyClientCalcLink('${c.id}',event)">🔗 Copiar link</button><button class="card-link-btn" onclick="openClientCalcLink('${c.id}',event)">↗</button></div></div>`;}
 let dragId=null;
 function attachDnD(){
   document.querySelectorAll('.card').forEach(card=>{card.addEventListener('dragstart',e=>{dragId=card.dataset.id;e.stopPropagation();setTimeout(()=>card.style.opacity='.4',0);});card.addEventListener('dragend',()=>card.style.opacity='1');});
@@ -1577,7 +1660,7 @@ function openClientModal(id){
   document.getElementById('cmContact').value=g('contact');document.getElementById('cmStage').value=g('stage','lead');
   document.getElementById('cmEmail').value=g('email');document.getElementById('cmPhone').value=g('phone');
   document.getElementById('cmCloseDate').value=g('closeDate');document.getElementById('cmStartMonth').value=g('startMonth');
-  document.getElementById('cmService').value=g('service','Fulfillment');document.getElementById('cmSource').value=g('source','');document.getElementById('cmShipments').value=g('shipments','');document.getElementById('cmNotes').value=g('notes');
+  document.getElementById('cmService').value=g('service','Fulfillment');document.getElementById('cmSource').value=g('source','');document.getElementById('cmLeadStatus').value=g('leadStatus','');document.getElementById('cmShipments').value=g('shipments','');document.getElementById('cmNotes').value=g('notes');
   buildCalcGrid(c?.calcParams||{},c?.calcSlug);
   renderModalDocs(c);
   renderModalTasks(c);
@@ -1622,8 +1705,13 @@ let _ecoDirtyC=new Set(),_ecoTimer=null,_ecoBusy=false;
 function ecoOn(){return !!(state&&state.ecoMode)&&!!getSb();}
 function ecoMarkClient(id){if(ecoOn()&&id)_ecoDirtyC.add(id);}
 function ecoSchedulePush(){if(!ecoOn())return;clearTimeout(_ecoTimer);_ecoTimer=setTimeout(ecoFlush,800);}
-function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:c.docs||{},history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
-function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
+function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
+function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
+let _ecoDirtyP=new Set();
+function ecoMarkProspect(id){if(ecoOn()&&id)_ecoDirtyP.add(id);}
+function prospectToRow(p){return {id:p.id,name:p.name||'',seller_id:p.sellerId||null,contact:p.contact||null,phone:p.phone||null,email:p.email||null,status:p.status||'nuevo',notes:p.notes||null,created_at:p.createdAt||nowISO(),updated_at:p.updatedAt||nowISO()};}
+function rowToProspect(r){return {id:r.id,name:r.name||'',sellerId:r.seller_id,contact:r.contact||'',phone:r.phone||'',email:r.email||'',status:r.status||'nuevo',notes:r.notes||'',createdAt:r.created_at,updatedAt:r.updated_at};}
+async function ecoDeleteProspect(id){if(!ecoOn())return;try{await getSb().from('eco_prospects').delete().eq('id',id);}catch(e){}}
 function billingRows(cid){const b=state.billing[cid]||{};return Object.keys(b).map(mk=>({client_id:cid,month:mk,amount:+b[mk].amount||0,orders:+b[mk].orders||0,shipments:+b[mk].shipments||0,comprobante:b[mk].comprobante||null}));}
 async function ecoFlush(){
   if(!ecoOn()||_ecoBusy)return; _ecoBusy=true; const sb=getSb();
@@ -1635,6 +1723,9 @@ async function ecoFlush(){
       const r=await sb.from('eco_clients').upsert(clientToRow(c)); if(r.error){console.warn('eco client',r.error.message);}
       const rows=billingRows(id); if(rows.length)await sb.from('eco_billing').upsert(rows);
     }
+    const pids=[..._ecoDirtyP]; _ecoDirtyP.clear();
+    if(pids.length){const prows=pids.map(id=>(state.prospects||[]).find(x=>x.id===id)).filter(Boolean).map(prospectToRow);
+      if(prows.length){try{const r=await sb.from('eco_prospects').upsert(prows);if(r.error)console.warn('eco prospects',r.error.message);}catch(e){console.warn('eco prospects',e.message);}}}
   }catch(e){console.warn('ecoFlush',e);} _ecoBusy=false;
 }
 async function ecoDeleteClient(id){if(!ecoOn())return;try{await getSb().from('eco_clients').delete().eq('id',id);}catch(e){}}
@@ -1642,21 +1733,23 @@ async function ecoDeleteSeller(id){if(!ecoOn())return;try{await getSb().from('ec
 async function ecoLoad(){
   const sb=getSb(); if(!sb)return false;
   try{
-    const [se,cl,bi,st]=await Promise.all([
+    const [se,cl,bi,st,pr]=await Promise.all([
       sb.from('eco_sellers').select('*'),
       sb.from('eco_clients').select('*'),
       sb.from('eco_billing').select('*'),
-      sb.from('eco_settings').select('*').eq('id',1).maybeSingle()
+      sb.from('eco_settings').select('*').eq('id',1).maybeSingle(),
+      sb.from('eco_prospects').select('*')   // si la tabla no existe, pr.error y conservamos los locales
     ]);
     if(se.error||cl.error||bi.error){showToast('No pude leer la base: '+((se.error||cl.error||bi.error).message));return false;}
     const sellers=(se.data||[]).map(s=>({id:s.id,name:s.name,calcSellerId:s.calc_seller_id,nameLocked:!!s.name_locked,scheme:s.scheme||'nuevo'}));
     const clients=(cl.data||[]).map(rowToClient);
+    const prospects=(pr&&!pr.error)?(pr.data||[]).map(rowToProspect):((state&&state.prospects)||[]);
     const billing={};(bi.data||[]).forEach(b=>{(billing[b.client_id]=billing[b.client_id]||{})[b.month]=Object.assign({amount:+b.amount||0,orders:+b.orders||0,shipments:+b.shipments||0},b.comprobante?{comprobante:b.comprobante}:{});});
     const set=(st&&st.data)||{};
     const prevApi=(state&&state.api)||{base:'https://api.fulfillment.envia.com',endpoint:'',authType:'bearer',token:'',keyName:'',connected:false};
     const prevCalc=(state&&state.calc)||{url:CALC_SUPABASE_DEFAULT,key:CALC_KEY_DEFAULT,table:'negotiations_with_seller',endpoint:'',linkBase:CALC_BASE_DEFAULT,connected:true};
     const prevSession=(state&&state.calcSession)||null;   // conservar la sesión iniciada
-    state={sellers,clients,billing,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
+    state={sellers,clients,billing,prospects,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
     migrateCommission(state.commission); // asegura estructura nueva de bonos
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
@@ -2111,7 +2204,7 @@ function saveClient(){
   const name=document.getElementById('cmName').value.trim();if(!name){showToast('Falta el nombre');return;}
   const docs={};document.querySelectorAll('#cmDocs input').forEach(cb=>docs[cb.dataset.doc]=cb.checked);
   const sellerId=isAdmin()?document.getElementById('cmSeller').value:currentSellerId();
-  const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
+  const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
   save();closeClientModal();renderAll();showToast('Cliente guardado');
 }
