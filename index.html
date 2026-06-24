@@ -90,6 +90,11 @@
   .stat .value{font-size:27px;font-weight:800;margin-top:8px;color:var(--navy)}
   .stat .value.money{color:var(--green)}
   .stat .sub{font-size:12px;color:var(--muted-2);margin-top:5px}
+  .dash-group{margin-bottom:16px}
+  .dash-group-h{font-size:11.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted-2);margin:0 0 9px 2px}
+  .dash-group.hero .dash-group-h{color:var(--navy)}
+  .dash-group.hero .stat{border-left:3px solid var(--green);background:linear-gradient(180deg,#f3fbf4,#fff)}
+  .dash-group.hero .stat .value{font-size:30px}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
   .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:900px){.dash-2col{grid-template-columns:1fr}}
@@ -292,7 +297,7 @@
   <!-- DASHBOARD -->
   <section class="view active" id="view-dashboard">
     <h2 class="section">Dashboard <span class="muted" id="dashSellerName" style="font-weight:500;font-size:15px"></span></h2>
-    <div class="grid stats" id="dashStats"></div>
+    <div id="dashStats"></div>
     <div class="dash-2col" style="margin-top:16px">
       <div class="panel"><h3>Venta nueva · últimos 6 meses</h3><div style="height:250px;position:relative"><canvas id="chartVN"></canvas></div></div>
       <div class="panel"><h3>Facturación de la cartera · últimos 6 meses</h3><div style="height:250px;position:relative"><canvas id="chartFact"></canvas></div></div>
@@ -1332,8 +1337,24 @@ function renderDashboard(){
   let comPrev=0;(sel==='all'?state.sellers.map(s=>s.id):[sel]).forEach(sid=>comPrev+=computeCommission(sid,{type:'month',mk:pmk}).total);
   const activosCur=clients.filter(c=>(clientBilling(c.id,mk)?.amount||0)>0).length;
   const activosPrev=clients.filter(c=>(clientBilling(c.id,pmk)?.amount||0)>0).length;
-  const stats=[{label:'Clientes activos',value:active.length,sub:'facturando',money:false,cur:activosCur,prev:activosPrev},{label:'En pipeline',value:inPipe,sub:'negociaciones abiertas',money:false},{label:'Contratos firmados',value:firmadosMes,sub:monthName(mk),money:false,act:"drillFirmados('"+mk+"')",cur:firmadosMes,prev:firmadosPrev},{label:'Inventarios enviados',value:invMes,sub:monthName(mk),money:false,act:"drillInvMes('"+mk+"')",cur:invMes,prev:invPrev},{label:'Venta nueva del mes',value:money(vnMes),sub:monthName(mk)+' (firmada)',money:true,act:"drillFirmados('"+mk+"')",cur:vnMes,prev:vnPrev},{label:'Facturación del mes',value:money(factCur),sub:mk,money:true,cur:factCur,prev:factPrev},{label:'Comisiones del mes',value:money(comMes),sub:'estimado',money:true,cur:comMes,prev:comPrev},{label:'Antigüedad promedio',value:antig!=null?antig+(antig===1?' mes':' meses'):'—',sub:'que llevan facturando (activos)',money:false},{label:'Retención',value:reten!=null?reten+'%':'—',sub:'siguen facturando',money:false},{label:'Ciclo promedio',value:cycAvg!=null?cycAvg+' d':'—',sub:'lead → inventario',money:false}];
-  document.getElementById('dashStats').innerHTML=stats.map(s=>{const bdg=(s.cur!=null&&s.prev!=null)?deltaBadge(s.cur,s.prev):'';return `<div class="stat ${s.act?'clickable':''}" ${s.act?'onclick="'+s.act+'"':''}><div class="label">${s.label}${s.act?' ›':''}</div><div class="value ${s.money?'money':''}">${s.value} ${bdg}</div><div class="sub">${s.sub}${bdg?' · vs '+monthName(pmk).slice(0,3):''}</div></div>`;}).join('');
+  const stats=[
+    // g0 — Resultados del mes (dinero, destacado)
+    {g:0,label:'Venta nueva del mes',value:money(vnMes),sub:monthName(mk)+' (firmada)',money:true,act:"drillFirmados('"+mk+"')",cur:vnMes,prev:vnPrev},
+    {g:0,label:'Facturación del mes',value:money(factCur),sub:mk,money:true,cur:factCur,prev:factPrev},
+    {g:0,label:'Comisiones del mes',value:money(comMes),sub:'estimado',money:true,cur:comMes,prev:comPrev},
+    // g1 — Actividad del mes
+    {g:1,label:'Contratos firmados',value:firmadosMes,sub:monthName(mk),money:false,act:"drillFirmados('"+mk+"')",cur:firmadosMes,prev:firmadosPrev},
+    {g:1,label:'Inventarios enviados',value:invMes,sub:monthName(mk),money:false,act:"drillInvMes('"+mk+"')",cur:invMes,prev:invPrev},
+    {g:1,label:'En pipeline',value:inPipe,sub:'negociaciones abiertas',money:false},
+    // g2 — Salud de la cartera
+    {g:2,label:'Clientes activos',value:active.length,sub:'facturando',money:false,cur:activosCur,prev:activosPrev},
+    {g:2,label:'Retención',value:reten!=null?reten+'%':'—',sub:'siguen facturando',money:false},
+    {g:2,label:'Antigüedad promedio',value:antig!=null?antig+(antig===1?' mes':' meses'):'—',sub:'que llevan facturando (activos)',money:false},
+    {g:2,label:'Ciclo promedio',value:cycAvg!=null?cycAvg+' d':'—',sub:'lead → inventario',money:false},
+  ];
+  const grupos=[{t:'Resultados del mes',hero:true},{t:'Actividad del mes'},{t:'Salud de la cartera'}];
+  const statCard=s=>{const bdg=(s.cur!=null&&s.prev!=null)?deltaBadge(s.cur,s.prev):'';return `<div class="stat ${s.act?'clickable':''}" ${s.act?'onclick="'+s.act+'"':''}><div class="label">${s.label}${s.act?' ›':''}</div><div class="value ${s.money?'money':''}">${s.value} ${bdg}</div><div class="sub">${s.sub}${bdg?' · vs '+monthName(pmk).slice(0,3):''}</div></div>`;};
+  document.getElementById('dashStats').innerHTML=grupos.map((G,gi)=>{const items=stats.filter(s=>s.g===gi);if(!items.length)return '';return `<div class="dash-group${G.hero?' hero':''}"><div class="dash-group-h">${G.t}</div><div class="grid stats">${items.map(statCard).join('')}</div></div>`;}).join('');
   renderGoal(sel,clients,mk);
   renderTeamProgress(sel,mk);
   renderAlerts(sel,clients,mk);
