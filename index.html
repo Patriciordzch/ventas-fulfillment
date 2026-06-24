@@ -442,6 +442,8 @@
         <option value="envios">Solo envíos</option>
       </select>
       <button class="btn green" onclick="syncBillingFromAPI()">⟳ Sincronizar API</button>
+      <button class="btn ghost" onclick="downloadBillingTemplate()" title="Descarga el formato del año seleccionado con tus clientes">⬇ Plantilla</button>
+      <label class="btn ghost" style="cursor:pointer" title="Sube facturación masiva del año seleccionado">⬆ Importar facturación<input type="file" accept=".csv,text/csv" onchange="importBillingCSV(event)" style="display:none"></label>
       <button class="btn ghost" onclick="reportFacturacion()">⬇ Reporte</button>
       <div class="api-status"><span class="api-dot" id="apiDot"></span><span id="apiStatusTxt">API: modo demo</span></div>
     </div>
@@ -2312,6 +2314,42 @@ function renderBilling(){
   document.getElementById('billTable').innerHTML=html;
 }
 function billYearVal(){const e=document.getElementById('billYear');return e&&e.value?+e.value:new Date().getFullYear();}
+const BILL_MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function billScopeSeller(){return isAdmin()?(document.getElementById('billSeller')&&document.getElementById('billSeller').value||'all'):currentSellerId();}
+// Descarga la plantilla CSV del año seleccionado: una fila por cliente, columnas Ene..Dic (prellenadas con lo ya capturado)
+function downloadBillingTemplate(){
+  const year=billYearVal(); const bs=billScopeSeller();
+  const cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&(CLOSED_STAGES_SET.includes(c.stage)||Object.keys(state.billing[c.id]||{}).length)).sort((a,b)=>a.name.localeCompare(b.name));
+  let csv='Cliente,'+BILL_MESES.join(',')+'\n';
+  cls.forEach(c=>{const row=['"'+(c.name||'').replace(/"/g,'""')+'"'];for(let i=0;i<12;i++){const mk=year+'-'+String(i+1).padStart(2,'0');const a=state.billing[c.id]&&state.billing[c.id][mk]&&state.billing[c.id][mk].amount;row.push(a||'');}csv+=row.join(',')+'\n';});
+  downloadFile('facturacion_'+year+'.csv',csv);
+}
+// Importa facturación masiva del año seleccionado. Empareja por nombre de cliente; solo escribe celdas con valor.
+function importBillingCSV(e){const f=e.target.files[0];if(!f)return;const fname=(f.name||'').toLowerCase();
+  if(/\.(numbers|xlsx|xls|zip|pages|key|ods)$/.test(fname)){showToast('Ese archivo es de Numbers/Excel. Guárdalo como CSV y reintenta.');e.target.value='';return;}
+  const year=billYearVal(); const bs=billScopeSeller();
+  const r=new FileReader();
+  r.onload=()=>{try{
+    const rows=parseCSV(String(r.result)); if(rows.length<2){showToast('El CSV no tiene filas de datos.');e.target.value='';return;}
+    const head=rows[0].map(h=>(h||'').trim().toLowerCase());
+    const cCli=head.findIndex(h=>['cliente','empresa','nombre'].includes(h));
+    if(cCli<0){showToast('Falta la columna "Cliente". Usa la Plantilla.');e.target.value='';return;}
+    const mmap={ene:1,enero:1,feb:2,febrero:2,mar:3,marzo:3,abr:4,abril:4,may:5,mayo:5,jun:6,junio:6,jul:7,julio:7,ago:8,agosto:8,sep:9,sept:9,septiembre:9,oct:10,octubre:10,nov:11,noviembre:11,dic:12,diciembre:12};
+    const mcols=[];head.forEach((h,i)=>{if(i===cCli)return;let m=mmap[h];if(!m){const n=+h;if(n>=1&&n<=12)m=n;else{const mm=h.match(/^\d{4}-(\d{2})$/);if(mm)m=+mm[1];}}if(m)mcols.push({i,m});});
+    if(!mcols.length){showToast('No encontré columnas de meses (Ene…Dic).');e.target.value='';return;}
+    const norm=s=>normName(s); let upd=0,notf=0,cells=0; const faltan=[];
+    for(let r0i=1;r0i<rows.length;r0i++){const r0=rows[r0i];const cname=(r0[cCli]||'').trim();if(!cname)continue;
+      const c=state.clients.find(x=>(bs==='all'||x.sellerId===bs)&&norm(x.name)===norm(cname));
+      if(!c){notf++;if(faltan.length<5)faltan.push(cname);continue;}
+      state.billing[c.id]=state.billing[c.id]||{};
+      mcols.forEach(mc=>{const raw=(r0[mc.i]||'').trim();if(raw==='')return;const amt=parseNum(raw);const mk=year+'-'+String(mc.m).padStart(2,'0');const b=state.billing[c.id][mk]||{amount:0,orders:0,shipments:0};b.amount=amt;state.billing[c.id][mk]=b;cells++;});
+      touch(c);ecoMarkClient(c.id);upd++;
+    }
+    save();renderBilling();try{renderDashboard();}catch(_){}
+    showToast(upd?('✅ '+upd+' cliente(s) · '+cells+' meses de '+year+' actualizados'+(notf?' · '+notf+' sin coincidencia ('+faltan.join(', ')+')':'')):'No se actualizó nada. Revisa que los nombres coincidan con tus clientes.');
+  }catch(err){showToast('Error al leer el CSV: '+err.message);} e.target.value='';};
+  r.readAsText(f);
+}
 
 /* ---------- PROYECCIÓN POR TIER ---------- */
 function renderProyeccion(){
