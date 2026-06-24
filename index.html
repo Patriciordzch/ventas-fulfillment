@@ -90,11 +90,15 @@
   .stat .value{font-size:27px;font-weight:800;margin-top:8px;color:var(--navy)}
   .stat .value.money{color:var(--green)}
   .stat .sub{font-size:12px;color:var(--muted-2);margin-top:5px}
-  .dash-group{margin-bottom:16px}
-  .dash-group-h{font-size:11.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted-2);margin:0 0 9px 2px}
+  .dash-group{margin-bottom:9px}
+  .dash-group-h{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted-2);margin:0 0 5px 2px}
   .dash-group.hero .dash-group-h{color:var(--navy)}
+  .dash-group .grid{gap:10px}
+  .dash-group .stat{padding:11px 14px}
+  .dash-group .stat .value{font-size:20px;margin-top:2px}
+  .dash-group .stat .sub{margin-top:2px;font-size:11.5px}
   .dash-group.hero .stat{border-left:3px solid var(--green);background:linear-gradient(180deg,#f3fbf4,#fff)}
-  .dash-group.hero .stat .value{font-size:30px}
+  .dash-group.hero .stat .value{font-size:24px}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
   .dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:900px){.dash-2col{grid-template-columns:1fr}}
@@ -298,13 +302,13 @@
   <section class="view active" id="view-dashboard">
     <h2 class="section">Dashboard <span class="muted" id="dashSellerName" style="font-weight:500;font-size:15px"></span></h2>
     <div id="dashStats"></div>
-    <div class="dash-2col" style="margin-top:16px">
-      <div class="panel"><h3>Venta nueva · últimos 6 meses</h3><div style="height:250px;position:relative"><canvas id="chartVN"></canvas></div></div>
-      <div class="panel"><h3>Facturación de la cartera · últimos 6 meses</h3><div style="height:250px;position:relative"><canvas id="chartFact"></canvas></div></div>
+    <div class="dash-2col" style="margin-top:10px">
+      <div class="panel"><h3>Venta nueva · últimos 6 meses</h3><div style="height:210px;position:relative"><canvas id="chartVN"></canvas></div></div>
+      <div class="panel"><h3>Facturación de la cartera · últimos 6 meses</h3><div style="height:210px;position:relative"><canvas id="chartFact"></canvas></div></div>
     </div>
     <div class="dash-2col">
-      <div class="panel"><h3>Pipeline por etapa</h3><div style="height:250px;position:relative"><canvas id="chartPipe"></canvas></div></div>
-      <div class="panel"><h3 id="chart2Title">Comisiones del mes por vendedor</h3><div style="height:250px;position:relative"><canvas id="chart2"></canvas></div></div>
+      <div class="panel"><h3>Pipeline por etapa</h3><div style="height:210px;position:relative"><canvas id="chartPipe"></canvas></div></div>
+      <div class="panel"><h3 id="chart2Title">Comisiones del mes por vendedor</h3><div style="height:210px;position:relative"><canvas id="chart2"></canvas></div></div>
     </div>
     <div id="dashGoal" style="margin-top:16px"></div>
     <div id="dashTeam" style="margin-top:16px"></div>
