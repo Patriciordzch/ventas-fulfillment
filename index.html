@@ -789,10 +789,22 @@ const DEFAULT_COMMISSION = {
   ],
   carteraMinTotal:200000,
   bonoClienteAlto:{umbralFactura:100000,bono:3000},
-  bonoEnvios:{umbralEnvios:2000,bono:3000},
+  bonoEnvios:{tiers:[{min:1000,bono:2000},{min:2000,bono:3000}]},
   bonoRecord:{umbralVenta:75000,minClientes:3,bono:3000},
   bonoAniversario:{pct:0.05},
+  metaGrupalTrim:1500,   // c/u si TODOS los vendedores (esquema nuevo) llegan a su bono trimestral
 };
+// Migra configs viejas guardadas en Supabase a la nueva estructura (no rompe nada existente).
+function migrateCommission(C){
+  if(!C)return;
+  if(C.bonoEnvios && !Array.isArray(C.bonoEnvios.tiers)){
+    const o=C.bonoEnvios; C.bonoEnvios={tiers:[{min:1000,bono:2000},{min:(o&&o.umbralEnvios)||2000,bono:(o&&o.bono)||3000}]};
+  }
+  if(C.metaGrupalTrim==null) C.metaGrupalTrim=1500;
+  // JSON convierte Infinity -> null; restaurar el tope "sin límite" en los tramos superiores
+  const fixInf=a=>{if(Array.isArray(a))a.forEach(t=>{if(t&&t.max==null)t.max=Infinity;});};
+  fixInf(C.ventasPropias); fixInf(C.bonoTrimestral); fixInf(C.carteraBands);
+}
 
 // Storage seguro: si localStorage no está disponible (ej. abrir como file:// = origen opaco),
 // cae a memoria para que la app no truene.
@@ -1070,6 +1082,12 @@ function computeCommission(sid,period){
     const ok=cq.length>=C.bonoTrimestralMinClientes;
     result.bonoTrimestral={suma,bono:ok?bono:0,clientes:cq.length,ok};
     if(ok)result.total+=bono;else if(bono>0)result.notes.push(`Bono trimestral de ${money(bono)} no aplica: requiere ${C.bonoTrimestralMinClientes} clientes (hay ${cq.length}).`);
+    // Meta grupal: si TODOS los vendedores de esquema nuevo llegan a su bono trimestral, cada uno gana extra.
+    if(C.metaGrupalTrim>0){
+      const nuevos=state.sellers.filter(s=>sellerScheme(s.id)==='nuevo');
+      const todos=nuevos.length>0 && nuevos.every(s=>{const q=quarterStats(s.id,period.qKey);return q.ok && q.bono>0;});
+      if(todos){result.bonos.push({tipo:'Meta grupal del equipo',mes:period.qKey,detalle:'Todos los vendedores llegaron a su bono trimestral',monto:C.metaGrupalTrim});result.total+=C.metaGrupalTrim;}
+    }
   }
   let carteraTotalCom=0;const carteraDetail=[];
   months.forEach(mk=>{
@@ -1094,7 +1112,10 @@ function computeCommission(sid,period){
     const allF=Object.values(state.billing[c.id]||{}).map(x=>x.amount||0); const maxF=allF.length?Math.max(...allF):0;
     if(maxF>C.bonoClienteAlto.umbralFactura){result.bonos.push({tipo:'Cliente alto (>'+money(C.bonoClienteAlto.umbralFactura)+')',mes:cm,detalle:c.name,monto:C.bonoClienteAlto.bono});result.total+=C.bonoClienteAlto.bono;}
     const mxS=maxShipments(c);
-    if(mxS>C.bonoEnvios.umbralEnvios){result.bonos.push({tipo:'Cliente +'+C.bonoEnvios.umbralEnvios.toLocaleString('es-MX')+' envíos',mes:cm,detalle:c.name+' · '+mxS.toLocaleString('es-MX')+' env.',monto:C.bonoEnvios.bono});result.total+=C.bonoEnvios.bono;}
+    // Bono por envíos en niveles: toma el MÁS ALTO que alcance el cliente (ej. 1,000 -> $2,000; 2,000 -> $3,000)
+    const tiersE=((C.bonoEnvios&&C.bonoEnvios.tiers)||[]).slice().sort((a,b)=>a.min-b.min);
+    let tE=null; tiersE.forEach(t=>{if(mxS>=t.min)tE=t;});
+    if(tE){result.bonos.push({tipo:'Cliente +'+tE.min.toLocaleString('es-MX')+' envíos',mes:cm,detalle:c.name+' · '+mxS.toLocaleString('es-MX')+' env.',monto:tE.bono});result.total+=tE.bono;}
   });
   result.total+=result.ventasPropiasTotal;
   return result;
@@ -1113,6 +1134,7 @@ function initUI(){
   if(state.sellers){const bog=state.sellers.filter(s=>normName(s.name)==='vendedor');if(bog.length){const ids=new Set(bog.map(s=>s.id));(state.clients||[]).forEach(c=>{if(ids.has(c.sellerId))c.sellerId=null;});state.sellers=state.sellers.filter(s=>!ids.has(s.id));mig=true;}}
   // Migración: la banda superior de venta nueva debe ser >$50,000 = 12% sin tope (configs viejas tenían tope finito → 0% en montos grandes).
   if(state.commission&&state.commission.ventasPropias&&state.commission.ventasPropias.length){const vp=state.commission.ventasPropias;const last=vp[vp.length-1];if(last.max!==null&&last.max!==Infinity&&isFinite(last.max)){last.max=Infinity;mig=true;}}
+  migrateCommission(state.commission);
   if(autoDedupe())mig=true;
   if(mig)save();
   buildSellerSelectors();buildStageFilters();document.getElementById('comMonth').value=curMonth();const _cob=document.getElementById('cobrosMonth');if(_cob)_cob.value=curMonth();const _vmm=document.getElementById('vendMonth');if(_vmm)_vmm.value=curMonth();buildQuarterSelector();loadConfigs();renderAll();
@@ -1608,6 +1630,7 @@ async function ecoLoad(){
     const prevCalc=(state&&state.calc)||{url:CALC_SUPABASE_DEFAULT,key:CALC_KEY_DEFAULT,table:'negotiations_with_seller',endpoint:'',linkBase:CALC_BASE_DEFAULT,connected:true};
     const prevSession=(state&&state.calcSession)||null;   // conservar la sesión iniciada
     state={sellers,clients,billing,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
+    migrateCommission(state.commission); // asegura estructura nueva de bonos
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
     assignOrphanCalendlyLeads(); // reasigna leads de Calendly sin vendedor (solo rellena; nunca borra)
@@ -2354,7 +2377,7 @@ function renderComisiones(){
   html+=`</div>`;
   }
   // Tracker de envíos (según alcance)
-  const um=C.bonoEnvios.umbralEnvios, nowM=curMonth();
+  const eT=((C.bonoEnvios&&C.bonoEnvios.tiers)||[]).slice().sort((a,b)=>a.min-b.min); const um=eT.length?eT[0].min:1000, nowM=curMonth();
   const addMonth=(mk,n)=>{const d=new Date(mk+'-01');d.setMonth(d.getMonth()+n);return monthKey(d);};
   // Envíos SIEMPRE desde la tabla de Facturación (columna Envíos / API). No usa estimados de la calculadora.
   const envOf=(c,mk)=>{const b=clientBilling(c.id,mk);return (b&&b.shipments>0)?{v:b.shipments,has:true}:{v:0,has:false};};
@@ -2362,15 +2385,15 @@ function renderComisiones(){
   let nuevos=[];
   scopeNuevo.forEach(s=>state.clients.filter(c=>c.sellerId===s.id).forEach(c=>{const m1=opMonth1(c);if(!m1)return;const idx=monthsBetween(m1,nowM);if(idx>=0&&idx<=2)nuevos.push({c,seller:s,m1,idx});}));
   if(scopeNuevo.length){
-  html+=`<div class="panel"><h3>Bono por envíos · clientes nuevos</h3><div class="muted" style="margin:-6px 0 12px;font-size:12.5px">En sus primeros 3 meses, si alcanzan <b>${numFmt(um)} envíos/mes</b> ganan <b>${money(C.bonoEnvios.bono)}</b> (se paga al cerrar el 3er mes).</div>`;
+  html+=`<div class="panel"><h3>Bono por envíos · clientes nuevos</h3><div class="muted" style="margin:-6px 0 12px;font-size:12.5px">En sus primeros 3 meses, según los envíos/mes que alcancen ganan: <b>${eT.map(t=>numFmt(t.min)+' → '+money(t.bono)).join(' · ')}</b> (se paga al cerrar el 3er mes).</div>`;
   if(!nuevos.length)html+='<p class="muted">Sin clientes nuevos en ventana de bono.</p>';
   else{const rows=nuevos.sort((a,b)=>(b.reached?0:1)-(a.reached?0:1)||a.idx-b.idx).map(x=>{
     const ms=[x.m1,addMonth(x.m1,1),addMonth(x.m1,2)];
     const vals=ms.map(mk=>mk>nowM?null:(envOf(x.c,mk).has?envOf(x.c,mk).v:0));
     const maxV=Math.max(0,...vals.filter(v=>v!=null));
-    const reached=vals.some(v=>v!=null&&v>=um);
+    const wonTier=eT.filter(t=>maxV>=t.min).pop(); const reached=!!wonTier;
     const m3=ms[2],paid=nowM>m3,pct=Math.min(100,Math.round(maxV/um*100));
-    const estado=reached?`<span class="tag green" title="${paid?'Ya pagado':'Paga al cerrar '+monthName(m3)+" '"+m3.slice(2,4)}">✅ Ganado${paid?' · pagado':''}</span>`:`<span class="tag" style="color:var(--amber);border-color:#f5d9a8;background:#fdf6e9">En curso · mes ${x.idx+1}/3</span>`;
+    const estado=reached?`<span class="tag green" title="${paid?'Ya pagado':'Paga al cerrar '+monthName(m3)+" '"+m3.slice(2,4)}">✅ ${money(wonTier.bono)}${paid?' · pagado':''}</span>`:`<span class="tag" style="color:var(--amber);border-color:#f5d9a8;background:#fdf6e9">En curso · mes ${x.idx+1}/3</span>`;
     const bar=`<div style="height:8px;width:90px;background:var(--surface-2);border-radius:5px;overflow:hidden;border:1px solid var(--border);display:inline-block;vertical-align:middle"><div style="height:100%;width:${pct}%;background:${reached?'var(--green)':'#1e6fd9'}"></div></div>`;
     return `<tr style="cursor:pointer" onclick="openClientModal('${x.c.id}')"><td><b>${x.c.name}</b></td><td>${x.seller.name}</td><td class="num">${numFmt(maxV)} <span class="muted" style="font-size:11px">/ ${numFmt(um)}</span></td><td style="white-space:nowrap">${bar} <span class="muted" style="font-size:11px">${pct}%</span></td><td>${estado}</td></tr>`;
   }).join('');
@@ -2457,9 +2480,10 @@ function renderConfig(){
   h+='</tbody></table></div>';
   h+=`<p class="muted" style="margin:16px 0 6px"><b>Bonos adicionales</b></p><div class="docs-list">
     <div class="doc-item"><span class="dname">Cliente factura > $<input type="number" value="${C.bonoClienteAlto.umbralFactura}" style="width:90px" onchange="state.commission.bonoClienteAlto.umbralFactura=+this.value;save()"> (primeros 3 meses)</span><span>$<input type="number" value="${C.bonoClienteAlto.bono}" style="width:80px" onchange="state.commission.bonoClienteAlto.bono=+this.value;save()"></span></div>
-    <div class="doc-item"><span class="dname">Cliente > <input type="number" value="${C.bonoEnvios.umbralEnvios}" style="width:70px" onchange="state.commission.bonoEnvios.umbralEnvios=+this.value;save()"> envíos/mes</span><span>$<input type="number" value="${C.bonoEnvios.bono}" style="width:80px" onchange="state.commission.bonoEnvios.bono=+this.value;save()"></span></div>
+    ${((C.bonoEnvios&&C.bonoEnvios.tiers)||[]).map((t,i)=>`<div class="doc-item"><span class="dname">Cliente cierra con ≥ <input type="number" value="${t.min}" style="width:75px" onchange="state.commission.bonoEnvios.tiers[${i}].min=+this.value;save()"> envíos/mes</span><span>$<input type="number" value="${t.bono}" style="width:80px" onchange="state.commission.bonoEnvios.tiers[${i}].bono=+this.value;save()"></span></div>`).join('')}
     <div class="doc-item"><span class="dname">Récord venta nueva (≥$<input type="number" value="${C.bonoRecord.umbralVenta}" style="width:80px" onchange="state.commission.bonoRecord.umbralVenta=+this.value;save()">, ≥${C.bonoRecord.minClientes} clientes)</span><span>$<input type="number" value="${C.bonoRecord.bono}" style="width:80px" onchange="state.commission.bonoRecord.bono=+this.value;save()"></span></div>
-    <div class="doc-item"><span class="dname">Cliente cumple 1 año</span><span><input type="number" value="${C.bonoAniversario.pct*100}" style="width:60px" onchange="state.commission.bonoAniversario.pct=this.value/100;save()">% del mes</span></div>
+    <div class="doc-item"><span class="dname">Cliente cumple 1 año</span><span><input type="number" value="${C.bonoAniversario.pct*100}" style="width:60px" onchange="state.commission.bonoAniversario.pct=this.value/100;save()">% del mes 12</span></div>
+    <div class="doc-item"><span class="dname">Meta grupal: si <b>todos</b> los vendedores llegan a su bono trimestral, c/u gana</span><span>$<input type="number" value="${C.metaGrupalTrim||0}" style="width:80px" onchange="state.commission.metaGrupalTrim=+this.value;save()"></span></div>
   </div>`;
   document.getElementById('commissionConfig').innerHTML=h;
 }
