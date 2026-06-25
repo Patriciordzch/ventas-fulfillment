@@ -187,6 +187,8 @@
   .login-card{background:#fff;border-radius:20px;box-shadow:0 24px 64px rgba(0,40,90,.16);border:1px solid #eaeff6;width:100%;max-width:400px;overflow:hidden;text-align:center}
   .login-card::before{content:"";display:block;height:5px;background:linear-gradient(90deg,var(--navy) 0%,#1e6fd9 60%,#16a34a 100%)}
   .login-inner{padding:38px 34px 32px}
+  .login-spin{width:34px;height:34px;border:3px solid #dbe7f6;border-top-color:var(--navy);border-radius:50%;margin:6px auto 4px;animation:loginspin .8s linear infinite}
+  @keyframes loginspin{to{transform:rotate(360deg)}}
   .login-card .lmark{width:230px;max-width:78%;margin:0 auto 22px;display:block}
   .login-card .lmark img{width:100%;height:auto;display:block}
   .login-card h2{margin:0;color:var(--navy);font-size:15px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
@@ -272,7 +274,12 @@
 
 <div class="login-bg" id="loginGate">
   <div class="login-card">
-    <div class="login-inner">
+    <div class="login-inner" id="loginLoading">
+      <div class="lmark"><img class="brand-logo" src="" alt="envia.com fulfillment"></div>
+      <div class="login-spin"></div>
+      <p class="login-sub">Cargando tu sesión…</p>
+    </div>
+    <div class="login-inner" id="loginForm" style="display:none">
       <div class="lmark"><img class="brand-logo" src="" alt="envia.com fulfillment"></div>
       <h2>Admin de ventas</h2>
       <p class="login-sub">Inicia sesión con tu cuenta de Envia Fulfillment (la misma de la calculadora).</p>
@@ -2075,7 +2082,10 @@ async function calcLogout(){const sb=getSb();try{if(sb)await sb.auth.signOut();}
 /* ---------- LOGIN GLOBAL (gate) — usa los usuarios de la calculadora ---------- */
 let currentUser=null;
 function loginErr(m){const e=document.getElementById('loginErr');if(e)e.textContent=m||'';}
-function showLoginGate(){const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');setUserChip(null);}
+// Estado de carga (spinner) del gate, para NO mostrar el formulario de login mientras se restaura la sesión.
+function showLoginLoading(){const l=document.getElementById('loginLoading');if(l)l.style.display='';const f=document.getElementById('loginForm');if(f)f.style.display='none';}
+function showLoginForm(){const l=document.getElementById('loginLoading');if(l)l.style.display='none';const f=document.getElementById('loginForm');if(f)f.style.display='';}
+function showLoginGate(){const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');showLoginForm();setUserChip(null);}
 function hideLoginGate(){const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');}
 function setUserChip(name,role){const el=document.getElementById('userChip');if(el)el.textContent=name?('👤 '+name+(role?(' · '+role):'')):'';}
 async function checkAuthGate(){
