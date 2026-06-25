@@ -2088,6 +2088,12 @@ function showLoginForm(){const l=document.getElementById('loginLoading');if(l)l.
 function showLoginGate(){const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');showLoginForm();setUserChip(null);}
 function hideLoginGate(){const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');}
 function setUserChip(name,role){const el=document.getElementById('userChip');if(el)el.textContent=name?('👤 '+name+(role?(' · '+role):'')):'';}
+// ¿Hay rastro de una sesión previa? (token de Supabase en storage o sesión guardada en el estado)
+function hasStoredSbToken(){
+  try{ if(state&&state.calcSession&&state.calcSession.access_token)return true;
+    const ls=_ls(); if(ls){for(let i=0;i<ls.length;i++){const k=ls.key(i);if(k&&/^sb-.*-auth-token$/.test(k)&&ls.getItem(k)&&ls.getItem(k)!=='null')return true;}}
+  }catch(e){} return false;
+}
 async function checkAuthGate(){
   const sb=getSb();
   const foot=document.getElementById('loginFoot');
@@ -2095,8 +2101,18 @@ async function checkAuthGate(){
     hideLoginGate(); setUserChip('sin conexión'); return;
   }
   if(foot)foot.textContent='';
+  showLoginLoading();                 // el gate arranca SIEMPRE en "cargando…", nunca con el formulario
+  const hadSession=hasStoredSbToken(); // usuario que ya había iniciado sesión en este dispositivo
   const ok=await ensureCalcAuth();
   if(ok){ try{const {data}=await sb.auth.getSession(); if(data&&data.session){onAuthed(data.session);return;}}catch(e){} }
+  // Carrera al recargar: el cliente de Supabase puede tardar en restaurar la sesión desde el storage.
+  // Si había sesión previa, mantenemos el spinner y reintentamos antes de mostrar el formulario (evita el "flash" de login).
+  if(hadSession){
+    for(let i=0;i<6;i++){ await new Promise(r=>setTimeout(r,250));
+      try{ if(state&&state.calcSession&&state.calcSession.access_token)await ensureCalcAuth();
+        const {data}=await sb.auth.getSession(); if(data&&data.session){onAuthed(data.session);return;} }catch(e){}
+    }
+  }
   showLoginGate();
 }
 async function doLogin(){
