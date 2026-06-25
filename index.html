@@ -133,6 +133,13 @@
   .centro-chip:has(input:checked){background:#eaf2fb;border-color:#9ec3f0;color:var(--navy)}
   .modal footer{padding:16px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
   .docs-list{display:flex;flex-direction:column;gap:8px}
+  .legal-item{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:9px;overflow:hidden}
+  .legal-item>summary{list-style:none;cursor:pointer;padding:12px 15px;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .legal-item>summary::-webkit-details-marker{display:none}
+  .legal-item[open]>summary{border-bottom:1px solid var(--border);background:var(--surface-2)}
+  .legal-item .lname{font-weight:700;color:var(--navy);font-size:14px}
+  .legal-sdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .legal-body{padding:13px 15px}
   .doc-item{display:flex;align-items:center;gap:11px;padding:10px 13px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px}
   .doc-item input[type=checkbox]{width:18px;height:18px;accent-color:var(--green)}
   .doc-item .dname{flex:1}
@@ -370,8 +377,13 @@
   <section class="view" id="view-legal">
     <div class="toolbar">
       <h2 class="section" style="margin:0">Legal <span class="muted" style="font-weight:500;font-size:14px">· revisión de documentos</span></h2>
+      <input id="legalSearch" type="search" placeholder="🔎 Buscar cliente o vendedor…" oninput="renderLegal()" style="min-width:190px">
+      <select id="legalStatus" onchange="renderLegal()" title="Filtrar por estado"><option value="all">Estado: todos</option><option value="pendiente">Pendientes</option><option value="aprobado">Aprobados</option><option value="rechazado">Rechazados</option></select>
+      <select id="legalMonth" onchange="renderLegal()" title="Filtrar por mes de documentos"><option value="all">Mes: todos</option></select>
+      <div class="spacer"></div>
+      <span id="legalStats" class="muted" style="font-size:12.5px"></span>
     </div>
-    <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Clientes que subieron su documentación en el onboarding. Abre cada archivo, revísalo y da tu <b>visto bueno</b>.</p>
+    <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Clientes que subieron su documentación en el onboarding. Toca un cliente para abrir sus archivos, revisarlos y dar tu <b>visto bueno</b>.</p>
     <div id="legalContent"></div>
   </section>
   <section class="view" id="view-pipeline">
@@ -1314,30 +1326,60 @@ function convertProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if
   showToast('✅ '+c.name+' pasó al Pipeline como Lead');
 }
 /* ---------- LEGAL (revisión de documentos del onboarding) ---------- */
+// Fecha de referencia (mes) de la documentación: cuándo llegó a "Documentos enviados", o cierre/última actividad.
+function legalDate(c){return stageDate(c,'docs')||c.closeDate||c.updatedAt||c.createdAt||'';}
 function renderLegal(){
   const el=document.getElementById('legalContent'); if(!el)return;
-  const list=state.clients.filter(c=>c.calcDocs&&c.calcDocs.length).sort((a,b)=>{const sa=(a.legal&&a.legal.status==='pendiente')||!a.legal?0:1;const sb=(b.legal&&b.legal.status==='pendiente')||!b.legal?0:1;return sa-sb||a.name.localeCompare(b.name);});
-  if(!list.length){el.innerHTML='<p class="muted">Aún no hay clientes con documentos subidos. Aparecerán aquí cuando suban su documentación en el onboarding de la calculadora.</p>';return;}
   const STC={pendiente:'#d97706',aprobado:'#00ab10',rechazado:'#c0392b'};
+  const STLBL={pendiente:'PENDIENTE',aprobado:'APROBADO',rechazado:'RECHAZADO'};
+  const base=state.clients.filter(c=>c.calcDocs&&c.calcDocs.length);
+  // ---- poblar el filtro de mes con los meses disponibles (conservando la selección) ----
+  const monthsSet=[...new Set(base.map(c=>(legalDate(c)||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const msel=document.getElementById('legalMonth');
+  if(msel){const cur=msel.value||'all';msel.innerHTML='<option value="all">Mes: todos</option>'+monthsSet.map(mk=>`<option value="${mk}">${monthName(mk)} ${mk.slice(0,4)}</option>`).join('');msel.value=monthsSet.includes(cur)?cur:'all';}
+  // ---- filtros ----
+  const q=(document.getElementById('legalSearch')?.value||'').trim().toLowerCase();
+  const stF=document.getElementById('legalStatus')?.value||'all';
+  const mF=document.getElementById('legalMonth')?.value||'all';
+  const stOf=c=>(c.legal&&c.legal.status)||'pendiente';
+  let list=base.filter(c=>{
+    if(stF!=='all'&&stOf(c)!==stF)return false;
+    if(mF!=='all'&&(legalDate(c)||'').slice(0,7)!==mF)return false;
+    if(q&&![c.name,sellerName(c.sellerId)].some(v=>(v||'').toLowerCase().includes(q)))return false;
+    return true;
+  });
+  // pendientes primero, luego por fecha de documentos (más reciente arriba)
+  const rank=c=>stOf(c)==='pendiente'?0:1;
+  list.sort((a,b)=>rank(a)-rank(b)||(legalDate(b)||'').localeCompare(legalDate(a)||'')||a.name.localeCompare(b.name));
+  const stats=document.getElementById('legalStats');
+  if(stats){const pend=base.filter(c=>stOf(c)==='pendiente').length;stats.textContent=`${list.length} de ${base.length} clientes · ${pend} pendiente${pend===1?'':'s'}`;}
+  if(!base.length){el.innerHTML='<p class="muted">Aún no hay clientes con documentos subidos. Aparecerán aquí cuando suban su documentación en el onboarding de la calculadora.</p>';return;}
+  if(!list.length){el.innerHTML='<p class="muted">Sin clientes en este filtro.</p>';return;}
   el.innerHTML=list.map(c=>{
     const docs=c.calcDocs||[]; const legal=c.legal||{docs:{},status:'pendiente'}; const ld=legal.docs||{};
     const tot=CALC_DOC_TYPES.length, up=docs.length, apr=CALC_DOC_TYPES.filter(t=>ld[t.id]==='ok').length;
-    const stc=STC[legal.status||'pendiente'];
+    const status=stOf(c), stc=STC[status]; const dt=(legalDate(c)||'').slice(0,10);
     const rows=CALC_DOC_TYPES.map(t=>{const d=docs.find(x=>x.doc_id===t.id);const ok=ld[t.id]==='ok';
       return `<div class="doc-item" style="padding:8px 11px"><span class="dname" style="flex:1;font-size:13px">${d?'📄':'⬜'} ${t.label}${d&&d.size?` <span class="muted" style="font-size:11px">· ${Math.round(d.size/1024)} KB</span>`:''}</span>`+
         (d?`<button class="btn ghost sm" onclick="openCalcDoc('${c.id}','${t.id}')">👁 Ver</button> <button class="btn ghost sm" style="border-color:${ok?'#bbf3bf':'var(--border)'};color:${ok?'#047a0c':'var(--muted)'};background:${ok?'var(--green-bg)':'transparent'}" onclick="legalSetDoc('${c.id}','${t.id}','${ok?'':'ok'}')">${ok?'✓ Aprobado':'Aprobar'}</button>`:'<span class="muted" style="font-size:11.5px">pendiente de subir</span>')+
         `</div>`;}).join('');
     const byTxt=legal.by?` · por ${legal.by}`:'';
-    return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-      <h3 style="margin:0">${c.name} <span class="muted" style="font-weight:500;font-size:12px">· ${sellerName(c.sellerId)} · ${stName(c.stage)}</span></h3>
-      <div style="display:flex;align-items:center;gap:8px"><span class="tag" style="border-color:${stc}66;background:${stc}14;color:${stc};font-weight:700">${(legal.status||'pendiente').toUpperCase()}${byTxt}</span><span class="muted" style="font-size:12px">${apr}/${tot} aprobados · ${up}/${tot} subidos</span></div>
-    </div><div class="docs-list">${rows}</div>
-    <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn green sm" onclick="legalSetStatus('${c.id}','aprobado')">✅ Dar visto bueno</button>
-      <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','rechazado')">✕ Rechazar</button>
-      <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','pendiente')">↺ Marcar pendiente</button>
-      <button class="btn ghost sm" onclick="downloadDocsZip('${c.id}')">⬇ Descargar carpeta (ZIP)</button>
-    </div></div>`;
+    return `<details class="legal-item"><summary>
+      <span class="legal-sdot" style="background:${stc}"></span>
+      <span class="lname">${c.name}</span>
+      <span class="muted" style="font-size:12px;flex:1">${sellerName(c.sellerId)} · ${dt||'—'}</span>
+      <span class="tag" style="border-color:${stc}66;background:${stc}14;color:${stc};font-weight:700">${STLBL[status]}</span>
+      <span class="muted" style="font-size:12px">${apr}/${tot} aprob · ${up}/${tot} subidos</span>
+    </summary><div class="legal-body">
+      ${legal.at?`<div class="muted" style="font-size:11.5px;margin:-2px 0 10px">Última acción${byTxt}: ${(legal.at||'').slice(0,10)}</div>`:''}
+      <div class="docs-list">${rows}</div>
+      <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn green sm" onclick="legalSetStatus('${c.id}','aprobado')">✅ Dar visto bueno</button>
+        <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','rechazado')">✕ Rechazar</button>
+        <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','pendiente')">↺ Marcar pendiente</button>
+        <button class="btn ghost sm" onclick="downloadDocsZip('${c.id}')">⬇ Descargar carpeta (ZIP)</button>
+      </div>
+    </div></details>`;
   }).join('');
 }
 async function openCalcDoc(cid,docId){const c=state.clients.find(x=>x.id===cid);if(!c)return;const d=(c.calcDocs||[]).find(x=>x.doc_id===docId);if(!d){showToast('Documento no encontrado');return;}
