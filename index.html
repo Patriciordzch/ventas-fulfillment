@@ -127,6 +127,10 @@
   .field{display:flex;flex-direction:column;gap:5px}
   .field label{font-size:12px;color:var(--muted);font-weight:700}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .centro-pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .centro-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;user-select:none}
+  .centro-chip input{accent-color:var(--navy);width:15px;height:15px;margin:0}
+  .centro-chip:has(input:checked){background:#eaf2fb;border-color:#9ec3f0;color:var(--navy)}
   .modal footer{padding:16px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
   .docs-list{display:flex;flex-direction:column;gap:8px}
   .doc-item{display:flex;align-items:center;gap:11px;padding:10px 13px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px}
@@ -381,6 +385,7 @@
       </span>
       <select id="pipeStage" onchange="renderBoard()" title="Filtrar por etapa"></select>
       <select id="pipeSource" onchange="renderBoard()" title="Filtrar por fuente"><option value="all">Fuente: todas</option><option>Prospección</option><option>Referido de Envía</option><option>Google</option><option>Calendly</option><option>Otro</option><option value="__none__">Sin fuente</option></select>
+      <select id="pipeCentro" onchange="renderBoard()" title="Filtrar por centro (almacén)"><option value="all">Centro: todos</option><option>CDMX</option><option>MTY</option><option>Laredo</option><option>Chile</option><option>Colombia</option><option>España</option><option value="__none__">Sin centro</option></select>
       <select id="pipeSeller" onchange="renderBoard()" title="Filtrar por vendedor"></select>
       <input id="pipeSearch" type="search" placeholder="🔎 Buscar cliente…" oninput="renderBoard()" style="min-width:170px" title="Buscar por nombre, contacto o servicio">
       <span id="pipeStats" class="muted" style="font-size:12.5px"></span>
@@ -399,6 +404,7 @@
   <section class="view" id="view-proyeccion">
     <div class="toolbar">
       <h2 class="section" style="margin:0">Proyección por tier</h2>
+      <select id="projCentro" onchange="renderProyeccion()" title="Filtrar por centro (almacén)"><option value="all">Centro: todos</option><option>CDMX</option><option>MTY</option><option>Laredo</option><option>Chile</option><option>Colombia</option><option>España</option><option value="__none__">Sin centro</option></select>
       <select id="projSeller" onchange="renderProyeccion()" title="Filtrar por vendedor"></select>
       <span class="muted" style="font-size:12.5px">Negociaciones <b>aún sin contrato firmado</b></span>
       <div class="spacer"></div>
@@ -428,6 +434,7 @@
         <input type="date" id="cliTo" onchange="renderClientes()">
       </span>
       <select id="cliStage" onchange="renderClientes()" title="Filtrar por etapa"></select>
+      <select id="cliCentro" onchange="renderClientes()" title="Filtrar por centro (almacén)"><option value="all">Centro: todos</option><option>CDMX</option><option>MTY</option><option>Laredo</option><option>Chile</option><option>Colombia</option><option>España</option><option value="__none__">Sin centro</option></select>
       <select id="cliSeller" onchange="renderClientes()" title="Filtrar por vendedor"></select>
       <select id="cliBilled" onchange="renderClientes()" title="Estado de facturación"><option value="all">Facturación: todos</option><option value="billed">Ya facturaron</option><option value="pending">Pendiente 1ª factura</option></select>
       <span id="cliStats" class="muted" style="font-size:12.5px"></span>
@@ -443,6 +450,7 @@
     <div class="toolbar">
       <h2 class="section" style="margin:0">Facturación por año</h2>
       <select id="billYear" onchange="renderBilling()" title="Año"></select>
+      <select id="billCentro" onchange="renderBilling()" title="Filtrar por centro (almacén)"><option value="all">Centro: todos</option><option>CDMX</option><option>MTY</option><option>Laredo</option><option>Chile</option><option>Colombia</option><option>España</option><option value="__none__">Sin centro</option></select>
       <select id="billSeller" onchange="renderBilling()" title="Filtrar por vendedor"></select>
       <select id="billView" onchange="renderBilling()" title="Qué mostrar">
         <option value="ambos">Monto + Envíos</option>
@@ -645,6 +653,7 @@
         <div class="field"><label>Fuente del lead</label><select id="cmSource"><option value="">—</option><option>Prospección</option><option>Referido de Envía</option><option>Google</option><option>Calendly</option><option>Otro</option></select></div>
         <div class="field"><label>Estatus de interés</label><select id="cmLeadStatus"><option value="">— normal</option><option value="futuro">Interés a futuro</option><option value="interesado">Interesado</option><option value="no">No interesado</option></select></div>
       </div>
+      <div class="field"><label>Centro FF de Interés <span class="muted" style="font-weight:500">(puede ser más de uno)</span></label><div id="cmCentros" class="centro-pick"></div></div>
       <div class="row2">
         <div class="field"><label>Envíos mensuales estimados</label><input type="number" id="cmShipments" placeholder="0"></div>
       </div>
@@ -1665,6 +1674,13 @@ function inPipeWindow(iso){
   if(v==='custom'){ if(!iso)return false; const d=Date.parse(iso); if(isNaN(d))return false; const f=document.getElementById('pipeFrom').value, t=document.getElementById('pipeTo').value; if(f&&d<Date.parse(f+'T00:00:00'))return false; if(t&&d>Date.parse(t+'T23:59:59'))return false; return true; }
   return withinDays(iso,v);
 }
+/* CENTROS FF (almacenes de interés) — multiselección por cliente */
+const FF_CENTROS=['CDMX','MTY','Laredo','Chile','Colombia','España'];
+function clientCentros(c){return Array.isArray(c&&c.centros)?c.centros:[];}
+function renderCentroPicker(sel){sel=Array.isArray(sel)?sel:[];const el=document.getElementById('cmCentros');if(el)el.innerHTML=FF_CENTROS.map(z=>`<label class="centro-chip"><input type="checkbox" value="${z}" ${sel.includes(z)?'checked':''}>${z}</label>`).join('');}
+function readCentroPicker(){return [...document.querySelectorAll('#cmCentros input:checked')].map(x=>x.value);}
+// Filtra un cliente según el <select> de centro del id dado: 'all' pasa todo, '__none__' = sin centro, o un centro específico.
+function centroFilterMatch(c,selId){const el=document.getElementById(selId);const v=el?el.value:'all';if(v==='all')return true;const arr=clientCentros(c);if(v==='__none__')return arr.length===0;return arr.includes(v);}
 function renderBoard(){
   const psl=document.getElementById('pipeSeller')?document.getElementById('pipeSeller').value:'all';
   const all=isAdmin()?(psl==='all'?state.clients:state.clients.filter(c=>c.sellerId===psl)):filterBySeller(state.clients);
@@ -1678,13 +1694,13 @@ function renderBoard(){
   const matchQ=c=>!q||[c.name,c.contact,c.email,c.service,sellerName(c.sellerId)].some(v=>(v||'').toLowerCase().includes(q));
   const srcF=document.getElementById('pipeSource')?document.getElementById('pipeSource').value:'all';
   const srcMatch=c=>srcF==='all'||(srcF==='__none__'?!c.source:(c.source||'')===srcF);
-  const clients=all.filter(c=>srcMatch(c)&&(q?matchQ(c):inPipeWindow(c.updatedAt)));
+  const clients=all.filter(c=>srcMatch(c)&&centroFilterMatch(c,'pipeCentro')&&(q?matchQ(c):inPipeWindow(c.updatedAt)));
   const stF=document.getElementById('pipeStage')?document.getElementById('pipeStage').value:'all';
   const shownStages=stF==='all'?STAGES:STAGES.filter(s=>s.id===stF);
   document.getElementById('board').innerHTML=shownStages.map(st=>{const list=clients.filter(c=>c.stage===st.id).sort((a,b)=>Date.parse(b.updatedAt||0)-Date.parse(a.updatedAt||0));const cards=list.map(cardHTML).join('')||'<div class="muted" style="font-size:12px;padding:10px;text-align:center">—</div>';return `<div class="col" data-stage="${st.id}"><h3><span><span class="dot" style="background:${st.color}"></span>${st.name}</span><span class="count">${list.length}</span></h3><div class="cards" data-stage="${st.id}">${cards}</div></div>`;}).join('');
   attachDnD();
 }
-function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;const f=clientBilling(c.id,curMonth())?.amount;const st=STAGES.find(s=>s.id===c.stage);const _td=new Date().toISOString().slice(0,10);const _due=(c.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=_td).sort((a,b)=>a.due<b.due?-1:1)[0];const _badge=_due?`<span class="tag" style="border-color:#f5d9a8;background:#fdf6e9;color:${_due.due<_td?'#c0392b':'#d97706'}">🔔 ${_due.due<_td?'tarea vencida':'tarea hoy'}</span>`:'';return `<div class="card" draggable="true" data-id="${c.id}" onclick="openClientModal('${c.id}')" style="border-left-color:${st.color}"><div class="name">${c.name}</div><div class="meta"><span>👤 ${c.contact||'sin contacto'}</span><span>🏷️ ${sellerName(c.sellerId)} · ${c.service||'—'}</span>${c.source?`<span>📍 ${c.source}</span>`:''}${f?`<span>💵 ${money(f)} este mes</span>`:''}${c.updatedAt?`<span title="${relativeTime(c.updatedAt)}">🕒 ${dateFmt(c.updatedAt)}</span>`:''}</div><div class="tags">${_badge}${c.leadStatus?`<span class="tag" style="border-color:${leadStatusColor(c.leadStatus)}66;background:${leadStatusColor(c.leadStatus)}14;color:${leadStatusColor(c.leadStatus)};font-weight:700">${c.leadStatus==='futuro'?'⏳ ':''}${leadStatusName(c.leadStatus)}</span>`:''}${c.shipments?`<span class="tag">📦 ${numFmt(c.shipments)}/mes</span>`:(PRE_CALC_STAGES.includes(c.stage)&&projShipOf(c)>0?`<span class="tag">📦 ${numFmt(projShipOf(c))}/mes proy.</span>`:'')}${PRE_CALC_STAGES.includes(c.stage)&&projMonthly(c)>0?`<span class="tag" style="border-color:#cdd8ea;color:var(--navy)">📊 ${money(projMonthly(c))}/mes proy. · ${projTier(projMonthly(c)).name}</span>`:''}${c.calcStatus?`<span class="tag calc">🧮 ${c.calcStatus}</span>`:(c.fromCalc?'<span class="tag calc">🧮 calculadora</span>':'')}${(c.calcNegId||c.fromCalc)?`<span class="tag green">📎 ${(c.calcDocs||[]).length}/${CALC_DOC_TYPES.length} docs</span>`:''}</div><div style="margin-top:9px;display:flex;gap:6px"><button class="card-link-btn" onclick="copyClientCalcLink('${c.id}',event)">🔗 Copiar link</button><button class="card-link-btn" onclick="openClientCalcLink('${c.id}',event)">↗</button></div></div>`;}
+function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;const f=clientBilling(c.id,curMonth())?.amount;const st=STAGES.find(s=>s.id===c.stage);const _td=new Date().toISOString().slice(0,10);const _due=(c.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=_td).sort((a,b)=>a.due<b.due?-1:1)[0];const _badge=_due?`<span class="tag" style="border-color:#f5d9a8;background:#fdf6e9;color:${_due.due<_td?'#c0392b':'#d97706'}">🔔 ${_due.due<_td?'tarea vencida':'tarea hoy'}</span>`:'';return `<div class="card" draggable="true" data-id="${c.id}" onclick="openClientModal('${c.id}')" style="border-left-color:${st.color}"><div class="name">${c.name}</div><div class="meta"><span>👤 ${c.contact||'sin contacto'}</span><span>🏷️ ${sellerName(c.sellerId)} · ${c.service||'—'}</span>${c.source?`<span>📍 ${c.source}</span>`:''}${f?`<span>💵 ${money(f)} este mes</span>`:''}${c.updatedAt?`<span title="${relativeTime(c.updatedAt)}">🕒 ${dateFmt(c.updatedAt)}</span>`:''}</div><div class="tags">${_badge}${c.leadStatus?`<span class="tag" style="border-color:${leadStatusColor(c.leadStatus)}66;background:${leadStatusColor(c.leadStatus)}14;color:${leadStatusColor(c.leadStatus)};font-weight:700">${c.leadStatus==='futuro'?'⏳ ':''}${leadStatusName(c.leadStatus)}</span>`:''}${clientCentros(c).length?`<span class="tag" style="border-color:#9ec3f0;background:#eaf2fb;color:var(--navy)">🏭 ${clientCentros(c).join(', ')}</span>`:''}${c.shipments?`<span class="tag">📦 ${numFmt(c.shipments)}/mes</span>`:(PRE_CALC_STAGES.includes(c.stage)&&projShipOf(c)>0?`<span class="tag">📦 ${numFmt(projShipOf(c))}/mes proy.</span>`:'')}${PRE_CALC_STAGES.includes(c.stage)&&projMonthly(c)>0?`<span class="tag" style="border-color:#cdd8ea;color:var(--navy)">📊 ${money(projMonthly(c))}/mes proy. · ${projTier(projMonthly(c)).name}</span>`:''}${c.calcStatus?`<span class="tag calc">🧮 ${c.calcStatus}</span>`:(c.fromCalc?'<span class="tag calc">🧮 calculadora</span>':'')}${(c.calcNegId||c.fromCalc)?`<span class="tag green">📎 ${(c.calcDocs||[]).length}/${CALC_DOC_TYPES.length} docs</span>`:''}</div><div style="margin-top:9px;display:flex;gap:6px"><button class="card-link-btn" onclick="copyClientCalcLink('${c.id}',event)">🔗 Copiar link</button><button class="card-link-btn" onclick="openClientCalcLink('${c.id}',event)">↗</button></div></div>`;}
 let dragId=null;
 function attachDnD(){
   document.querySelectorAll('.card').forEach(card=>{card.addEventListener('dragstart',e=>{dragId=card.dataset.id;e.stopPropagation();setTimeout(()=>card.style.opacity='.4',0);});card.addEventListener('dragend',()=>card.style.opacity='1');});
@@ -1700,7 +1716,7 @@ function renderClientes(){
   const csl=document.getElementById('cliSeller')?document.getElementById('cliSeller').value:'all';
   const base=isAdmin()?(csl==='all'?state.clients:state.clients.filter(c=>c.sellerId===csl)):filterBySeller(state.clients);
   const cdISO=c=>{const d=cierreDate(c);return d?d+'T12:00:00':null;};
-  let clients=base.filter(c=>CLOSED.includes(c.stage)&&(stF==='all'||c.stage===stF)&&c.name.toLowerCase().includes(q)&&inRange(cdISO(c),sel,cf,ct));
+  let clients=base.filter(c=>CLOSED.includes(c.stage)&&(stF==='all'||c.stage===stF)&&centroFilterMatch(c,'cliCentro')&&c.name.toLowerCase().includes(q)&&inRange(cdISO(c),sel,cf,ct));
   const facturanN=clients.filter(c=>firstBillMonth(c)).length, pendN=clients.length-facturanN;
   const billedF=document.getElementById('cliBilled')?document.getElementById('cliBilled').value:'all';
   if(billedF==='billed')clients=clients.filter(c=>firstBillMonth(c));
@@ -1727,6 +1743,7 @@ function openClientModal(id){
   document.getElementById('cmEmail').value=g('email');document.getElementById('cmPhone').value=g('phone');
   document.getElementById('cmCloseDate').value=g('closeDate');document.getElementById('cmStartMonth').value=g('startMonth');
   document.getElementById('cmService').value=g('service','Fulfillment');document.getElementById('cmSource').value=g('source','');document.getElementById('cmLeadStatus').value=g('leadStatus','');document.getElementById('cmShipments').value=g('shipments','');document.getElementById('cmNotes').value=g('notes');
+  renderCentroPicker(c?clientCentros(c):[]);
   buildCalcGrid(c?.calcParams||{},c?.calcSlug);
   renderModalDocs(c);
   renderModalTasks(c);
@@ -1779,8 +1796,8 @@ function saveSettings(){ecoMarkSettings();save();}   // editar meta o esquema de
 function saveSellers(){ecoMarkSellers();save();}     // alta/edición/scheme de vendedor
 function ecoMarkClient(id){if(ecoOn()&&id)_ecoDirtyC.add(id);}
 function ecoSchedulePush(){if(!ecoOn())return;clearTimeout(_ecoTimer);_ecoTimer=setTimeout(ecoFlush,800);}
-function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
-function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',legal:(r.docs&&r.docs.__legal)||null,history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
+function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{},(c.centros&&c.centros.length)?{__centros:c.centros}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
+function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',legal:(r.docs&&r.docs.__legal)||null,centros:(r.docs&&Array.isArray(r.docs.__centros))?r.docs.__centros:[],history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
 let _ecoDirtyP=new Set();
 function ecoMarkProspect(id){if(ecoOn()&&id)_ecoDirtyP.add(id);}
 function prospectToRow(p){return {id:p.id,name:p.name||'',seller_id:p.sellerId||null,contact:p.contact||null,phone:p.phone||null,email:p.email||null,status:p.status||'nuevo',notes:p.notes||null,created_at:p.createdAt||nowISO(),updated_at:p.updatedAt||nowISO()};}
@@ -2284,7 +2301,7 @@ function saveClient(){
   const name=document.getElementById('cmName').value.trim();if(!name){showToast('Falta el nombre');return;}
   const docs={};document.querySelectorAll('#cmDocs input').forEach(cb=>docs[cb.dataset.doc]=cb.checked);
   const sellerId=isAdmin()?document.getElementById('cmSeller').value:currentSellerId();
-  const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
+  const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,centros:readCentroPicker(),shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
   save();closeClientModal();renderAll();showToast('Cliente guardado');
 }
@@ -2303,7 +2320,7 @@ function renderBilling(){
   const bs=isAdmin()?(document.getElementById('billSeller')?document.getElementById('billSeller').value:'all'):currentSellerId();
   const months=Array.from({length:12},(_,i)=>year+'-'+String(i+1).padStart(2,'0'));
   const mesLbl=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  let cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&(months.some(mk=>state.billing[c.id]?.[mk])||(opMonth1(c)&&(+opMonth1(c).slice(0,4))<=year&&CLOSED_STAGES_SET.includes(c.stage))));
+  let cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&centroFilterMatch(c,'billCentro')&&(months.some(mk=>state.billing[c.id]?.[mk])||(opMonth1(c)&&(+opMonth1(c).slice(0,4))<=year&&CLOSED_STAGES_SET.includes(c.stage))));
   cls.sort((a,b)=>{const A=opMonth1(a)||'0',B=opMonth1(b)||'0';return A<B?1:-1;});
   // ---- Totales por mes y por cliente ----
   const colTot=new Array(12).fill(0); let grand=0;
@@ -2413,6 +2430,7 @@ function renderProyeccion(){
   let cls=state.clients.filter(c=>PRE_CALC_STAGES.includes(c.stage));
   if(!isAdmin()){const sid=ensureViewerSeller();if(sid)cls=cls.filter(c=>c.sellerId===sid);}
   else{const sel=document.getElementById('projSeller');const bs=sel?sel.value:'all';if(bs!=='all')cls=cls.filter(c=>c.sellerId===bs);}
+  cls=cls.filter(c=>centroFilterMatch(c,'projCentro'));
   // Solo entran a los tiers los que ya tienen monto proyectado. Los demás van a "Por estimar".
   const conMonto=cls.filter(c=>projMonthly(c)>0);
   const porEstimar=cls.filter(c=>projMonthly(c)<=0);
