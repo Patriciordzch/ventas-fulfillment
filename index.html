@@ -614,6 +614,35 @@
           <div style="margin-top:10px"><button class="btn sm" onclick="saveApiConfig()">Guardar</button></div>
         </div>
       </div>
+
+      <div class="integ-card">
+        <div class="ico" style="background:#4a154b;color:#fff">💬</div>
+        <div style="flex:1">
+          <b>Slack · Notificaciones</b>
+          <p class="muted" style="margin:4px 0 10px;font-size:12.5px">Avisos automáticos por evento + un resumen periódico. En Slack crea un <b>Incoming Webhook</b> por canal (<code>api.slack.com/apps</code> → tu app → <i>Incoming Webhooks</i> → <i>Add New Webhook to Workspace</i>) y pega cada URL aquí.</p>
+          <label class="doc-item" style="margin-bottom:10px"><input type="checkbox" id="slkEnabled"><span class="dname">Activar notificaciones a Slack</span></label>
+          <div class="row2">
+            <div class="field"><label>📅 Webhook · Nuevo lead de Calendly</label><input id="slkLead" placeholder="https://hooks.slack.com/services/…"></div>
+            <div class="field"><label>✅ Webhook · Propuesta aceptada</label><input id="slkProp" placeholder="https://hooks.slack.com/services/…"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>📎 Webhook · Documentos subidos</label><input id="slkDocs" placeholder="https://hooks.slack.com/services/…"></div>
+            <div class="field"><label>✍️ Webhook · Contrato firmado</label><input id="slkContrato" placeholder="https://hooks.slack.com/services/…"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>📊 Webhook · Resumen (digest)</label><input id="slkDigest" placeholder="https://hooks.slack.com/services/…"></div>
+            <div class="field"><label>Frecuencia del resumen</label><select id="slkFreq"><option value="semanal">Semanal</option><option value="diario">Diario</option><option value="off">Desactivado</option></select></div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">
+            <button class="btn sm" onclick="saveSlackConfig()">Guardar</button>
+            <button class="btn ghost sm" onclick="slackTest('lead')">Probar lead</button>
+            <button class="btn ghost sm" onclick="slackTest('contrato')">Probar contrato</button>
+            <button class="btn ghost sm" onclick="slackSendDigest(true)">📊 Enviar resumen ahora</button>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:7px">Las notificaciones en tiempo real se envían mientras un administrador tiene la herramienta abierta. Al activar, lo que ya existe se marca como visto: solo se avisa lo <b>nuevo</b>. Cada evento se notifica una sola vez.</div>
+        </div>
+      </div>
+
       <div class="hint">La <b>Calculadora ya viene conectada</b> (URL + llave pública precargadas). Para <b>crear</b> negociaciones inicia sesión con tu correo de vendedor aquí arriba (la tabla exige vendedor autenticado). <b>Importar</b> el avance funciona sin login. La <b>Facturación</b> (api.fulfillment.envia.com) sigue en demo hasta que pegues su token.</div>
     </div>
 
@@ -1223,6 +1252,7 @@ function buildStageFilters(){
 }
 function initUI(){
   if(!state.prospects)state.prospects=[];
+  if(!state.slack)state.slack={enabled:false,webhooks:{},digestFreq:'semanal'};
   let mig=false; (state.clients||[]).forEach(c=>{if(STAGE_MIGRATE[c.stage]){c.stage=STAGE_MIGRATE[c.stage];mig=true;} const need=stageIdx(c.stage)+1; if(!c.history||c.history.length<need){buildTimeline(c,state.billing);mig=true;} if(!c.updatedAt){c.updatedAt=c.createdAt||nowISO();} if(!c.createdAt){c.createdAt=c.updatedAt;}});
   Object.values(state.billing||{}).forEach(ms=>Object.values(ms).forEach(b=>{if(b.orders===undefined){b.orders=0;mig=true;}}));
   // Migración: quitar vendedores placeholder "Vendedor" (creados por negociaciones sin nombre); sus clientes quedan sin asignar.
@@ -1753,7 +1783,7 @@ function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;c
 let dragId=null;
 function attachDnD(){
   document.querySelectorAll('.card').forEach(card=>{card.addEventListener('dragstart',e=>{dragId=card.dataset.id;e.stopPropagation();setTimeout(()=>card.style.opacity='.4',0);});card.addEventListener('dragend',()=>card.style.opacity='1');});
-  document.querySelectorAll('.col').forEach(col=>{col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('drop-hover');});col.addEventListener('dragleave',()=>col.classList.remove('drop-hover'));col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('drop-hover');const stage=col.dataset.stage;const c=state.clients.find(x=>x.id===dragId);if(c&&changeStage(c,stage)){touch(c);save();renderAll();showToast(`${c.name} → ${STAGES.find(s=>s.id===stage).name}`);}});});
+  document.querySelectorAll('.col').forEach(col=>{col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('drop-hover');});col.addEventListener('dragleave',()=>col.classList.remove('drop-hover'));col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('drop-hover');const stage=col.dataset.stage;const c=state.clients.find(x=>x.id===dragId);if(c&&changeStage(c,stage)){touch(c);save();slackScan();renderAll();showToast(`${c.name} → ${STAGES.find(s=>s.id===stage).name}`);}});});
 }
 
 /* CLIENTES */
@@ -1845,8 +1875,8 @@ function saveSettings(){ecoMarkSettings();save();}   // editar meta o esquema de
 function saveSellers(){ecoMarkSellers();save();}     // alta/edición/scheme de vendedor
 function ecoMarkClient(id){if(ecoOn()&&id)_ecoDirtyC.add(id);}
 function ecoSchedulePush(){if(!ecoOn())return;clearTimeout(_ecoTimer);_ecoTimer=setTimeout(ecoFlush,800);}
-function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{},(c.centros&&c.centros.length)?{__centros:c.centros}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
-function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',legal:(r.docs&&r.docs.__legal)||null,centros:(r.docs&&Array.isArray(r.docs.__centros))?r.docs.__centros:[],history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
+function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{},(c.centros&&c.centros.length)?{__centros:c.centros}:{},(c.slack&&Object.keys(c.slack).length)?{__slackN:c.slack}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
+function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',legal:(r.docs&&r.docs.__legal)||null,centros:(r.docs&&Array.isArray(r.docs.__centros))?r.docs.__centros:[],slack:(r.docs&&r.docs.__slackN)||{},history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
 let _ecoDirtyP=new Set();
 function ecoMarkProspect(id){if(ecoOn()&&id)_ecoDirtyP.add(id);}
 function prospectToRow(p){return {id:p.id,name:p.name||'',seller_id:p.sellerId||null,contact:p.contact||null,phone:p.phone||null,email:p.email||null,status:p.status||'nuevo',notes:p.notes||null,created_at:p.createdAt||nowISO(),updated_at:p.updatedAt||nowISO()};}
@@ -1863,7 +1893,9 @@ async function ecoFlush(){
     // Solo subir settings (meta + esquema de comisión) cuando el admin los cambió:
     // evita que la meta o el esquema se "borren" al guardar cualquier otra cosa.
     if(_ecoDirtyS){_ecoDirtyS=false;
-      await sb.from('eco_settings').upsert({id:1,commission:state.commission,goal_per_seller:goalPerSeller(),updated_at:nowISO()});}
+      await sb.from('eco_settings').upsert({id:1,commission:state.commission,goal_per_seller:goalPerSeller(),updated_at:nowISO()});
+      // Config de Slack (compartida). Upsert aparte: si la columna 'slack' no existe aún, no rompe el guardado de la meta/comisión.
+      try{await sb.from('eco_settings').upsert({id:1,slack:state.slack||{},updated_at:nowISO()});}catch(e){}}
     const ids=[..._ecoDirtyC]; _ecoDirtyC.clear();
     for(const id of ids){const c=state.clients.find(x=>x.id===id); if(!c)continue;
       const r=await sb.from('eco_clients').upsert(clientToRow(c)); if(r.error){console.warn('eco client',r.error.message);}
@@ -1895,7 +1927,8 @@ async function ecoLoad(){
     const prevApi=(state&&state.api)||{base:'https://api.fulfillment.envia.com',endpoint:'',authType:'bearer',token:'',keyName:'',connected:false};
     const prevCalc=(state&&state.calc)||{url:CALC_SUPABASE_DEFAULT,key:CALC_KEY_DEFAULT,table:'negotiations_with_seller',endpoint:'',linkBase:CALC_BASE_DEFAULT,connected:true};
     const prevSession=(state&&state.calcSession)||null;   // conservar la sesión iniciada
-    state={sellers,clients,billing,prospects,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
+    const prevSlack=(state&&state.slack)||{};
+    state={sellers,clients,billing,prospects,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,slack:(set.slack&&Object.keys(set.slack).length)?set.slack:prevSlack,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
     migrateCommission(state.commission); // asegura estructura nueva de bonos
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
@@ -1903,6 +1936,8 @@ async function ecoLoad(){
     calendlyLeadsToDemo();       // los leads de Calendly entran a "Demo agendado"
     dedupeClients(); // une clientes duplicados (mismo nombre+vendedor) conservando el más avanzado + su facturación
     save();
+    slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
+    slackMaybeDigest();  // envía el resumen si toca (diario/semanal)
     return true;
   }catch(e){showToast('Error al cargar de Supabase: '+e.message);return false;}
 }
@@ -2371,7 +2406,7 @@ function saveClient(){
   const sellerId=isAdmin()?document.getElementById('cmSeller').value:currentSellerId();
   const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,centros:readCentroPicker(),shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
-  save();closeClientModal();renderAll();showToast('Cliente guardado');
+  save();slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
 function deleteClient(){if(!editingClientId)return;if(!confirm('¿Eliminar este cliente y su facturación?'))return;const _id=editingClientId;state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);save();closeClientModal();renderAll();showToast('Cliente eliminado');}
 function updBill(cid,mk,f,v){if(!state.billing[cid])state.billing[cid]={};if(!state.billing[cid][mk])state.billing[cid][mk]={amount:0,orders:0,shipments:0};state.billing[cid][mk][f]=+v||0;touch(state.clients.find(x=>x.id===cid));save();renderBilling();renderDashboard();}
@@ -2822,11 +2857,114 @@ function loadConfigs(){
   const c=state.calc||{};
   document.getElementById('cfgCalcUrl').value=c.url||CALC_SUPABASE_DEFAULT;document.getElementById('cfgCalcKey').value=c.key||CALC_KEY_DEFAULT;document.getElementById('cfgCalcTable').value=c.table||'negotiations_with_seller';document.getElementById('cfgCalcEndpoint').value=c.endpoint||'';document.getElementById('cfgCalcLinkBase').value=c.linkBase||CALC_BASE_DEFAULT;
   const ce=document.getElementById('cfgCalcEmail'); if(ce)ce.value=c.email||'';
+  const sk=state.slack||{}, wh=sk.webhooks||{}, $=id=>document.getElementById(id);
+  if($('slkEnabled')){$('slkEnabled').checked=!!sk.enabled;$('slkLead').value=wh.lead||'';$('slkProp').value=wh.propuesta||'';$('slkDocs').value=wh.docs||'';$('slkContrato').value=wh.contrato||'';$('slkDigest').value=wh.digest||'';$('slkFreq').value=sk.digestFreq||'semanal';}
   updateApiStatus(); calcAuthStatus();
 }
 function saveApiConfig(){state.api={base:cfgVal('cfgApiBase'),endpoint:cfgVal('cfgApiEndpoint'),authType:cfgVal('cfgApiAuthType'),token:cfgVal('cfgApiToken'),keyName:cfgVal('cfgApiKeyName'),connected:!!(cfgVal('cfgApiEndpoint')&&cfgVal('cfgApiToken'))};save();updateApiStatus();showToast('Conexión de facturación guardada');}
 function saveCalcConfig(){state.calc={url:cfgVal('cfgCalcUrl')||CALC_SUPABASE_DEFAULT,key:cfgVal('cfgCalcKey')||CALC_KEY_DEFAULT,table:cfgVal('cfgCalcTable')||'negotiations_with_seller',endpoint:cfgVal('cfgCalcEndpoint'),linkBase:cfgVal('cfgCalcLinkBase')||CALC_BASE_DEFAULT,connected:true};save();showToast('Conexión con la Calculadora guardada');}
 function cfgVal(id){return document.getElementById(id).value.trim();}
+
+/* ============================================================
+   INTEGRACIÓN SLACK — notificaciones por evento + resumen (digest)
+   ============================================================ */
+const SLACK_EVENTS=[
+  {k:'lead',     label:'Nuevo lead de Calendly', emoji:'📅'},
+  {k:'propuesta',label:'Propuesta aceptada',     emoji:'✅'},
+  {k:'docs',     label:'Documentos subidos',     emoji:'📎'},
+  {k:'contrato', label:'Contrato firmado',       emoji:'✍️'},
+];
+function slackCfg(){state.slack=state.slack||{};state.slack.webhooks=state.slack.webhooks||{};return state.slack;}
+function slackEnabled(){return !!slackCfg().enabled;}
+// Envío fire-and-forget; mode:'no-cors' evita el bloqueo CORS de los webhooks de Slack desde el navegador.
+function slackPost(url,payload){ if(!url)return Promise.resolve(false);
+  try{return fetch(url,{method:'POST',mode:'no-cors',body:JSON.stringify(payload)}).then(()=>true).catch(()=>false);}catch(e){return Promise.resolve(false);} }
+function slackText(event,c){
+  const seller=sellerName(c.sellerId)||'sin asignar';
+  const ev=SLACK_EVENTS.find(e=>e.k===event)||{};
+  const m={
+    lead:`${ev.emoji} *Nuevo lead de Calendly:* ${c.name}\nVendedor: ${seller}${c.contact?` · Contacto: ${c.contact}`:''}${c.email?` · ${c.email}`:''}`,
+    propuesta:`${ev.emoji} *Propuesta aceptada:* ${c.name}\nVendedor: ${seller}${projMonthly(c)>0?` · ~${money(projMonthly(c))}/mes proyectado`:''}`,
+    docs:`${ev.emoji} *Documentos subidos:* ${c.name}\nVendedor: ${seller} · listo para revisión de Legal`,
+    contrato:`${ev.emoji} *¡Contrato firmado!* ${c.name}\nVendedor: ${seller}${c.closeDate?` · ${c.closeDate}`:''}${ventaBase(c)>0?` · venta nueva ${money(ventaBase(c))}`:''}`,
+  };
+  return {text:m[event]||c.name};
+}
+// ¿El evento está activo AHORA para este cliente?
+function slackEventActive(event,c){
+  switch(event){
+    case 'lead':      return (c.source||'')==='Calendly';
+    case 'propuesta': return stageIdx(c.stage)>=stageIdx('aceptada')||!!(c.docs&&c.docs['Propuesta aceptada']);
+    case 'docs':      return !!(c.calcDocs&&c.calcDocs.length); // subida real de documentos
+    case 'contrato':  return CLOSED_STAGES_SET.includes(c.stage);
+  }
+  return false;
+}
+// Marca como "ya visto" todo lo que YA está activo, SIN enviar (evita inundar Slack con el histórico al activar).
+function slackBaseline(){
+  (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
+    SLACK_EVENTS.forEach(e=>{ if(slackEventActive(e.k,c))c.slack[e.k]=1; });
+    ecoMarkClient(c.id);
+  });
+  slackCfg().baselineAt=nowISO(); saveSettings(); ecoSchedulePush();
+}
+// Revisa y envía lo pendiente (solo desde sesión admin; flag por cliente evita duplicados entre navegadores).
+function slackScan(){
+  try{
+    if(!slackEnabled()||!isAdmin())return;
+    const wh=slackCfg().webhooks||{}; let sent=0;
+    (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
+      SLACK_EVENTS.forEach(e=>{
+        if(slackEventActive(e.k,c)&&!c.slack[e.k]){
+          c.slack[e.k]=1; ecoMarkClient(c.id);
+          if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;}
+        }
+      });
+    });
+    if(sent){save();}
+  }catch(e){}
+}
+function slackTest(event){ const url=(slackCfg().webhooks||{})[event];
+  if(!url){showToast('Pega primero el webhook de ese evento y Guarda');return;}
+  slackPost(url,{text:`✅ Prueba · webhook de *${(SLACK_EVENTS.find(e=>e.k===event)||{}).label||event}* de Envia Fulfillment funcionando.`});
+  showToast('Mensaje de prueba enviado a Slack');
+}
+// ---- Resumen (digest) ----
+function slackDigestText(){
+  const days=slackCfg().digestFreq==='diario'?1:7; const since=Date.now()-days*864e5;
+  const inWin=iso=>iso&&Date.parse(iso)>=since;
+  const leads=(state.clients||[]).filter(c=>inWin(c.createdAt)).length;
+  const props=(state.clients||[]).filter(c=>inWin(stageDate(c,'aceptada'))).length;
+  const firm=(state.clients||[]).filter(c=>CLOSED_STAGES_SET.includes(c.stage)&&inWin(stageDate(c,'contrato')));
+  const vn=firm.reduce((a,c)=>a+ventaBase(c),0);
+  const legalPend=(state.clients||[]).filter(c=>c.calcDocs&&c.calcDocs.length&&!(c.legal&&c.legal.status==='aprobado')).length;
+  const per=slackCfg().digestFreq==='diario'?'hoy':'esta semana';
+  return {text:`📊 *Resumen Envia Fulfillment · ${per}*\n• Leads nuevos: *${leads}*\n• Propuestas aceptadas: *${props}*\n• Contratos firmados: *${firm.length}*${vn>0?` (venta nueva ${money(vn)})`:''}\n• Pendientes de revisión en Legal: *${legalPend}*`};
+}
+function slackSendDigest(manual){
+  const url=(slackCfg().webhooks||{}).digest;
+  if(!url){if(manual)showToast('Pega primero el webhook de Resumen y Guarda');return;}
+  slackPost(url,slackDigestText()); slackCfg().lastDigest=nowISO(); saveSettings(); save();
+  if(manual)showToast('Resumen enviado a Slack');
+}
+function slackMaybeDigest(){
+  try{
+    if(!slackEnabled()||!isAdmin())return; const s=slackCfg();
+    if(!(s.webhooks||{}).digest||s.digestFreq==='off')return;
+    const days=s.digestFreq==='diario'?1:7; const last=s.lastDigest?Date.parse(s.lastDigest):0;
+    if(Date.now()-last>=days*864e5-36e5)slackSendDigest(false);
+  }catch(e){}
+}
+function saveSlackConfig(){
+  const s=slackCfg(); const was=!!s.enabled;
+  s.enabled=document.getElementById('slkEnabled').checked;
+  s.webhooks={lead:cfgVal('slkLead'),propuesta:cfgVal('slkProp'),docs:cfgVal('slkDocs'),contrato:cfgVal('slkContrato'),digest:cfgVal('slkDigest')};
+  s.digestFreq=document.getElementById('slkFreq').value;
+  saveSettings();
+  if(s.enabled&&!was){ slackBaseline(); showToast('Slack activado · histórico marcado como visto, solo se avisará lo nuevo'); }
+  else showToast('Configuración de Slack guardada');
+  loadConfigs();
+}
 function updateApiStatus(){const live=state.api&&state.api.connected;document.getElementById('apiDot').classList.toggle('live',live);document.getElementById('apiStatusTxt').textContent=live?'API: configurada':'API: modo demo';}
 
 /* DATA IO */
