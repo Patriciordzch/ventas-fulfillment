@@ -294,6 +294,7 @@
     <button data-view="proyeccion">Proyección</button>
     <button data-view="clientes">Clientes</button>
     <button data-view="facturacion">Facturación</button>
+    <button data-view="legal">Legal</button>
     <div class="navgroup"><button type="button" class="navgroup-btn">Equipo <span class="car">▾</span></button><div class="navmenu">
       <button data-view="vendedores">Vendedores</button>
       <button data-view="comisiones">Comisiones</button>
@@ -354,6 +355,13 @@
     </div>
     <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Tu bandeja de prospección, tipo hoja de cálculo. Captura empresas y su estatus; cuando marques <b>Interesado</b>, el lead pasa automáticamente al Pipeline.</p>
     <div id="leadsContent"></div>
+  </section>
+  <section class="view" id="view-legal">
+    <div class="toolbar">
+      <h2 class="section" style="margin:0">Legal <span class="muted" style="font-weight:500;font-size:14px">· revisión de documentos</span></h2>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Clientes que subieron su documentación en el onboarding. Abre cada archivo, revísalo y da tu <b>visto bueno</b>.</p>
+    <div id="legalContent"></div>
   </section>
   <section class="view" id="view-pipeline">
     <div class="toolbar">
@@ -1222,7 +1230,7 @@ async function autoSyncCalc(){
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
   }catch(e){}
 }
-function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}try{renderLeads();}catch(e){}}
+function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}try{renderLeads();}catch(e){}try{renderLegal();}catch(e){}}
 
 function closeNavMenus(){document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open'));}
 document.querySelector('header.top').addEventListener('click',e=>{
@@ -1233,7 +1241,7 @@ document.querySelector('header.top').addEventListener('click',e=>{
 });
 document.addEventListener('click',e=>{if(!e.target.closest('.navgroup'))closeNavMenus();});
 function goView(v){
-  const adminOnly=['usuarios','config'];
+  const adminOnly=['legal','usuarios','config'];
   if(adminOnly.includes(v)&&!isAdmin())v='dashboard';
   document.querySelectorAll('header.top button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.querySelectorAll('.navgroup').forEach(g=>g.classList.toggle('active',!!g.querySelector('button[data-view="'+v+'"]')));
@@ -1243,6 +1251,7 @@ function goView(v){
   if(v==='vendedores')renderVendedores();
   if(v==='proyeccion')renderProyeccion();
   if(v==='leads')renderLeads();
+  if(v==='legal')renderLegal();
   if(v==='cobros')renderCobros();
   if(['pipeline','dashboard','clientes','proyeccion'].includes(v))autoSyncCalc();
 }
@@ -1288,6 +1297,39 @@ function convertProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if
   save(); renderLeads(); try{renderBoard();renderDashboard();}catch(e){}
   showToast('✅ '+c.name+' pasó al Pipeline como Lead');
 }
+/* ---------- LEGAL (revisión de documentos del onboarding) ---------- */
+function renderLegal(){
+  const el=document.getElementById('legalContent'); if(!el)return;
+  const list=state.clients.filter(c=>c.calcDocs&&c.calcDocs.length).sort((a,b)=>{const sa=(a.legal&&a.legal.status==='pendiente')||!a.legal?0:1;const sb=(b.legal&&b.legal.status==='pendiente')||!b.legal?0:1;return sa-sb||a.name.localeCompare(b.name);});
+  if(!list.length){el.innerHTML='<p class="muted">Aún no hay clientes con documentos subidos. Aparecerán aquí cuando suban su documentación en el onboarding de la calculadora.</p>';return;}
+  const STC={pendiente:'#d97706',aprobado:'#00ab10',rechazado:'#c0392b'};
+  el.innerHTML=list.map(c=>{
+    const docs=c.calcDocs||[]; const legal=c.legal||{docs:{},status:'pendiente'}; const ld=legal.docs||{};
+    const tot=CALC_DOC_TYPES.length, up=docs.length, apr=CALC_DOC_TYPES.filter(t=>ld[t.id]==='ok').length;
+    const stc=STC[legal.status||'pendiente'];
+    const rows=CALC_DOC_TYPES.map(t=>{const d=docs.find(x=>x.doc_id===t.id);const ok=ld[t.id]==='ok';
+      return `<div class="doc-item" style="padding:8px 11px"><span class="dname" style="flex:1;font-size:13px">${d?'📄':'⬜'} ${t.label}${d&&d.size?` <span class="muted" style="font-size:11px">· ${Math.round(d.size/1024)} KB</span>`:''}</span>`+
+        (d?`<button class="btn ghost sm" onclick="openCalcDoc('${c.id}','${t.id}')">👁 Ver</button> <button class="btn ghost sm" style="border-color:${ok?'#bbf3bf':'var(--border)'};color:${ok?'#047a0c':'var(--muted)'};background:${ok?'var(--green-bg)':'transparent'}" onclick="legalSetDoc('${c.id}','${t.id}','${ok?'':'ok'}')">${ok?'✓ Aprobado':'Aprobar'}</button>`:'<span class="muted" style="font-size:11.5px">pendiente de subir</span>')+
+        `</div>`;}).join('');
+    const byTxt=legal.by?` · por ${legal.by}`:'';
+    return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <h3 style="margin:0">${c.name} <span class="muted" style="font-weight:500;font-size:12px">· ${sellerName(c.sellerId)} · ${stName(c.stage)}</span></h3>
+      <div style="display:flex;align-items:center;gap:8px"><span class="tag" style="border-color:${stc}66;background:${stc}14;color:${stc};font-weight:700">${(legal.status||'pendiente').toUpperCase()}${byTxt}</span><span class="muted" style="font-size:12px">${apr}/${tot} aprobados · ${up}/${tot} subidos</span></div>
+    </div><div class="docs-list">${rows}</div>
+    <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn green sm" onclick="legalSetStatus('${c.id}','aprobado')">✅ Dar visto bueno</button>
+      <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','rechazado')">✕ Rechazar</button>
+      <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','pendiente')">↺ Marcar pendiente</button>
+      <button class="btn ghost sm" onclick="downloadDocsZip('${c.id}')">⬇ Descargar carpeta (ZIP)</button>
+    </div></div>`;
+  }).join('');
+}
+async function openCalcDoc(cid,docId){const c=state.clients.find(x=>x.id===cid);if(!c)return;const d=(c.calcDocs||[]).find(x=>x.doc_id===docId);if(!d){showToast('Documento no encontrado');return;}
+  if(!d.storage_path){showToast('Ese archivo es demo o sin ruta. En producción se abre el PDF subido.');return;}
+  const sb=getSb();if(!sb){showToast('Conecta Supabase para ver el archivo.');return;}
+  try{const {data,error}=await sb.storage.from(CALC_DOCS_BUCKET).createSignedUrl(d.storage_path,600);if(error||!data){showToast('No pude abrir el archivo.');return;}window.open(data.signedUrl,'_blank');}catch(e){showToast('Error: '+e.message);}}
+function legalSetDoc(cid,docId,val){const c=state.clients.find(x=>x.id===cid);if(!c)return;c.legal=c.legal||{docs:{},status:'pendiente'};c.legal.docs=c.legal.docs||{};if(val)c.legal.docs[docId]=val;else delete c.legal.docs[docId];touch(c);save();renderLegal();}
+function legalSetStatus(cid,val){const c=state.clients.find(x=>x.id===cid);if(!c)return;c.legal=c.legal||{docs:{}};c.legal.status=val;c.legal.at=nowISO();c.legal.by=(currentUser&&currentUser.name)||'';touch(c);save();renderLegal();showToast('Legal · '+c.name+': '+val);}
 function exportLeads(){let csv='Empresa,Contacto,Telefono,Correo,Status,Vendedor\n';leadScope().forEach(p=>{csv+=`"${(p.name||'').replace(/"/g,'""')}","${p.contact||''}","${p.phone||''}","${p.email||''}","${leadStatusName(p.status)}","${sellerName(p.sellerId)||''}"\n`;});downloadFile('leads.csv',csv);}
 function importProspectsCSV(e){const f=e.target.files[0];if(!f)return;const fname=(f.name||'').toLowerCase();
   if(/\.(numbers|xlsx|xls|zip|pages|key|ods)$/.test(fname)){showToast('Ese archivo es de Numbers/Excel. Ábrelo y guárdalo como CSV, luego impórtalo.');e.target.value='';return;}
@@ -1427,7 +1469,7 @@ function currentSellerId(){ return linkSellerToUser(); }
 function applyPermissions(){
   const admin=isAdmin();
   document.querySelectorAll('header.top button[data-view]').forEach(b=>{
-    const adminOnly=['usuarios','config'].includes(b.dataset.view);
+    const adminOnly=['legal','usuarios','config'].includes(b.dataset.view);
     b.style.display=(adminOnly&&!admin)?'none':'';
   });
   // Ocultar un grupo completo si ninguno de sus ítems es visible (ej. Administración para vendedores)
@@ -1438,7 +1480,7 @@ function applyPermissions(){
   const vtit=document.getElementById('vendTitle'); if(vtit)vtit.textContent=vlabel;
   const sf=document.getElementById('sellerFilterWrap'); if(sf)sf.style.display=admin?'':'none';
   ['pipeSeller','billSeller','cliSeller','projSeller','cobrosSeller','vendPick'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=admin?'':'none';});
-  if(!admin&&['usuarios','config'].includes(currentView))goView('dashboard');
+  if(!admin&&['legal','usuarios','config'].includes(currentView))goView('dashboard');
 }
 
 function buildSellerSelectors(){const o='<option value="all">Todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('globalSeller').innerHTML=o;const bsel=document.getElementById('billSeller');if(bsel)bsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const byel=document.getElementById('billYear');if(byel){const cur=byel.value;const yrs=new Set([new Date().getFullYear()]);Object.values(state.billing||{}).forEach(mm=>Object.keys(mm).forEach(k=>yrs.add(+k.slice(0,4))));const arr=[...yrs].sort((a,b)=>b-a);byel.innerHTML=arr.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur&&arr.includes(+cur))byel.value=cur;}const psel=document.getElementById('pipeSeller');if(psel)psel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const csel=document.getElementById('cliSeller');if(csel)csel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const prsel=document.getElementById('projSeller');if(prsel){const cur=prsel.value;prsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)prsel.value=cur;}const cosel=document.getElementById('cobrosSeller');if(cosel){const cur=cosel.value;cosel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)cosel.value=cur;}const vpk=document.getElementById('vendPick');if(vpk){const cur=vpk.value;vpk.innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur&&state.sellers.find(s=>s.id===cur))vpk.value=cur;}document.getElementById('cmSeller').innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('cmStage').innerHTML=STAGES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');}
@@ -1729,8 +1771,8 @@ let _ecoDirtyC=new Set(),_ecoTimer=null,_ecoBusy=false;
 function ecoOn(){return !!(state&&state.ecoMode)&&!!getSb();}
 function ecoMarkClient(id){if(ecoOn()&&id)_ecoDirtyC.add(id);}
 function ecoSchedulePush(){if(!ecoOn())return;clearTimeout(_ecoTimer);_ecoTimer=setTimeout(ecoFlush,800);}
-function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
-function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
+function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
+function rowToClient(r){return {id:r.id,name:r.name,sellerId:r.seller_id,stage:r.stage,contact:r.contact||'',email:r.email||'',phone:r.phone||'',service:r.service||'Fulfillment',source:r.source||'',shipments:+r.shipments||0,closeDate:r.close_date||'',startMonth:r.start_month||'',notes:r.notes||'',calcSlug:r.calc_slug||undefined,calcNegId:r.calc_neg_id||undefined,calcAmount:r.calc_amount,calcEstimate:r.calc_estimate,calcParams:r.calc_params||{},calcPrices:r.calc_prices||undefined,calcDiscount:+r.calc_discount||0,projAmount:r.proj_amount,projShip:r.proj_ship,docs:r.docs||{},leadStatus:(r.docs&&r.docs.__leadStatus)||'',legal:(r.docs&&r.docs.__legal)||null,history:r.history||[],tasks:r.tasks||[],activities:r.activities||[],createdAt:r.created_at,updatedAt:r.updated_at};}
 let _ecoDirtyP=new Set();
 function ecoMarkProspect(id){if(ecoOn()&&id)_ecoDirtyP.add(id);}
 function prospectToRow(p){return {id:p.id,name:p.name||'',seller_id:p.sellerId||null,contact:p.contact||null,phone:p.phone||null,email:p.email||null,status:p.status||'nuevo',notes:p.notes||null,created_at:p.createdAt||nowISO(),updated_at:p.updatedAt||nowISO()};}
