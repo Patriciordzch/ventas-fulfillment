@@ -1768,7 +1768,15 @@ function getSbRead(){const c=state.calc||{};const url=c.url||CALC_SUPABASE_DEFAU
    BASE COMPARTIDA (Supabase) — capa de datos del ecosistema
    ============================================================ */
 let _ecoDirtyC=new Set(),_ecoTimer=null,_ecoBusy=false;
+// Banderas para datos GLOBALES compartidos: solo se suben a Supabase cuando el admin los cambia
+// de verdad, nunca en cada save(). Así la sesión de un vendedor (con copia local vieja) NO machaca
+// la meta de venta nueva ni el esquema de comisiones ni los vendedores.
+let _ecoDirtyS=false,_ecoDirtySel=false;
 function ecoOn(){return !!(state&&state.ecoMode)&&!!getSb();}
+function ecoMarkSettings(){_ecoDirtyS=true;}
+function ecoMarkSellers(){_ecoDirtySel=true;}
+function saveSettings(){ecoMarkSettings();save();}   // editar meta o esquema de comisión
+function saveSellers(){ecoMarkSellers();save();}     // alta/edición/scheme de vendedor
 function ecoMarkClient(id){if(ecoOn()&&id)_ecoDirtyC.add(id);}
 function ecoSchedulePush(){if(!ecoOn())return;clearTimeout(_ecoTimer);_ecoTimer=setTimeout(ecoFlush,800);}
 function clientToRow(c){return {id:c.id,name:c.name,seller_id:c.sellerId||null,stage:c.stage||'lead',contact:c.contact||null,email:c.email||null,phone:c.phone||null,service:c.service||null,source:c.source||null,shipments:+c.shipments||0,close_date:c.closeDate||null,start_month:c.startMonth||null,notes:c.notes||null,calc_slug:c.calcSlug||null,calc_neg_id:c.calcNegId||null,calc_amount:(c.calcAmount==null?null:+c.calcAmount),calc_estimate:(c.calcEstimate==null?null:+c.calcEstimate),calc_params:c.calcParams||null,calc_prices:c.calcPrices||null,calc_discount:+c.calcDiscount||0,proj_amount:(c.projAmount==null||c.projAmount===''?null:+c.projAmount),proj_ship:(c.projShip==null||c.projShip===''?null:+c.projShip),docs:Object.assign({},c.docs||{},c.leadStatus?{__leadStatus:c.leadStatus}:{},c.legal?{__legal:c.legal}:{}),history:c.history||[],tasks:c.tasks||[],activities:c.activities||[],updated_at:c.updatedAt||nowISO()};}
@@ -1782,8 +1790,14 @@ function billingRows(cid){const b=state.billing[cid]||{};return Object.keys(b).m
 async function ecoFlush(){
   if(!ecoOn()||_ecoBusy)return; _ecoBusy=true; const sb=getSb();
   try{
-    await sb.from('eco_sellers').upsert(state.sellers.map(s=>({id:s.id,name:s.name,calc_seller_id:s.calcSellerId||null,name_locked:!!s.nameLocked,scheme:s.scheme||'nuevo'})));
-    await sb.from('eco_settings').upsert({id:1,commission:state.commission,goal_per_seller:goalPerSeller(),updated_at:nowISO()});
+    // Solo subir vendedores cuando el admin los cambió (no en cada edición de cliente):
+    // evita que una sesión con copia local vieja reescriba el scheme de todos.
+    if(_ecoDirtySel){_ecoDirtySel=false;
+      await sb.from('eco_sellers').upsert(state.sellers.map(s=>({id:s.id,name:s.name,calc_seller_id:s.calcSellerId||null,name_locked:!!s.nameLocked,scheme:s.scheme||'nuevo'})));}
+    // Solo subir settings (meta + esquema de comisión) cuando el admin los cambió:
+    // evita que la meta o el esquema se "borren" al guardar cualquier otra cosa.
+    if(_ecoDirtyS){_ecoDirtyS=false;
+      await sb.from('eco_settings').upsert({id:1,commission:state.commission,goal_per_seller:goalPerSeller(),updated_at:nowISO()});}
     const ids=[..._ecoDirtyC]; _ecoDirtyC.clear();
     for(const id of ids){const c=state.clients.find(x=>x.id===id); if(!c)continue;
       const r=await sb.from('eco_clients').upsert(clientToRow(c)); if(r.error){console.warn('eco client',r.error.message);}
@@ -2692,28 +2706,28 @@ function renderConfig(){
   document.getElementById('sellerAdmin').innerHTML=`<div style="display:flex;gap:8px;padding:4px 0;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)"><span style="flex:1">Vendedor (editable)</span><span style="width:160px">Esquema de comisión</span><span style="width:110px;text-align:right">Meta/mes</span><span style="width:60px"></span></div>`+state.sellers.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)"><input value="${(s.name||'').replace(/"/g,'&quot;')}" onchange="renameSeller('${s.id}',this.value)" style="flex:1;font-weight:600" title="Editar nombre del vendedor"><select style="width:160px" onchange="setSellerScheme('${s.id}',this.value)"><option value="nuevo" ${sellerScheme(s.id)==='nuevo'?'selected':''}>Nuevo (completo)</option><option value="viejo" ${sellerScheme(s.id)==='viejo'?'selected':''}>Viejo (10% venta nueva)</option></select><span style="width:110px;text-align:right;font-weight:600">${sellerScheme(s.id)==='viejo'?'—':(goalPerSeller()>0?money(sellerGoal(s.id)):'—')}</span><button class="btn ghost sm" onclick="removeSeller('${s.id}')">Quitar</button></div>`).join('');
   const C=state.commission;
   let h='<div class="tablewrap"><table><thead><tr><th>Venta mensual</th><th>Comisión</th></tr></thead><tbody>';
-  C.ventasPropias.forEach((t,i)=>h+=`<tr><td>${money(t.min)} – ${t.max===Infinity?'∞':money(t.max)}</td><td><input type="number" value="${t.pct*100}" style="width:70px" onchange="state.commission.ventasPropias[${i}].pct=this.value/100;save()">%</td></tr>`);
+  C.ventasPropias.forEach((t,i)=>h+=`<tr><td>${money(t.min)} – ${t.max===Infinity?'∞':money(t.max)}</td><td><input type="number" value="${t.pct*100}" style="width:70px" onchange="state.commission.ventasPropias[${i}].pct=this.value/100;saveSettings()">%</td></tr>`);
   h+='</tbody></table></div>';
   h+='<p class="muted" style="margin:16px 0 6px"><b>Bono trimestral</b> (requiere ≥'+C.bonoTrimestralMinClientes+' clientes)</p><div class="tablewrap"><table><thead><tr><th>Venta trimestral</th><th>Bono</th></tr></thead><tbody>';
-  C.bonoTrimestral.forEach((t,i)=>h+=`<tr><td>${money(t.min)} – ${t.max===Infinity?'∞':money(t.max)}</td><td>$<input type="number" value="${t.bono}" style="width:90px" onchange="state.commission.bonoTrimestral[${i}].bono=+this.value;save()"></td></tr>`);
+  C.bonoTrimestral.forEach((t,i)=>h+=`<tr><td>${money(t.min)} – ${t.max===Infinity?'∞':money(t.max)}</td><td>$<input type="number" value="${t.bono}" style="width:90px" onchange="state.commission.bonoTrimestral[${i}].bono=+this.value;saveSettings()"></td></tr>`);
   h+='</tbody></table></div>';
   h+='<p class="muted" style="margin:16px 0 6px"><b>Comisión por cartera</b> (cartera > '+money(C.carteraMinTotal)+', cerrar ≥1 cliente/mes)</p><div class="tablewrap"><table><thead><tr><th>Clientes</th>'+C.carteraBands.map(b=>`<th>${b.label}</th>`).join('')+'</tr></thead><tbody>';
-  C.carteraRows.forEach((r,ri)=>h+=`<tr><td>${r.label}</td>`+r.pct.map((p,pi)=>`<td><input type="number" step="0.01" value="${p*100}" style="width:60px" onchange="state.commission.carteraRows[${ri}].pct[${pi}]=this.value/100;save()">%</td>`).join('')+'</tr>');
+  C.carteraRows.forEach((r,ri)=>h+=`<tr><td>${r.label}</td>`+r.pct.map((p,pi)=>`<td><input type="number" step="0.01" value="${p*100}" style="width:60px" onchange="state.commission.carteraRows[${ri}].pct[${pi}]=this.value/100;saveSettings()">%</td>`).join('')+'</tr>');
   h+='</tbody></table></div>';
   h+=`<p class="muted" style="margin:16px 0 6px"><b>Bonos adicionales</b></p><div class="docs-list">
-    <div class="doc-item"><span class="dname">Cliente factura > $<input type="number" value="${C.bonoClienteAlto.umbralFactura}" style="width:90px" onchange="state.commission.bonoClienteAlto.umbralFactura=+this.value;save()"> (primeros 3 meses)</span><span>$<input type="number" value="${C.bonoClienteAlto.bono}" style="width:80px" onchange="state.commission.bonoClienteAlto.bono=+this.value;save()"></span></div>
-    ${((C.bonoEnvios&&C.bonoEnvios.tiers)||[]).map((t,i)=>`<div class="doc-item"><span class="dname">Cliente cierra con ≥ <input type="number" value="${t.min}" style="width:75px" onchange="state.commission.bonoEnvios.tiers[${i}].min=+this.value;save()"> envíos/mes</span><span>$<input type="number" value="${t.bono}" style="width:80px" onchange="state.commission.bonoEnvios.tiers[${i}].bono=+this.value;save()"></span></div>`).join('')}
-    <div class="doc-item"><span class="dname">Récord venta nueva (≥$<input type="number" value="${C.bonoRecord.umbralVenta}" style="width:80px" onchange="state.commission.bonoRecord.umbralVenta=+this.value;save()">, ≥${C.bonoRecord.minClientes} clientes)</span><span>$<input type="number" value="${C.bonoRecord.bono}" style="width:80px" onchange="state.commission.bonoRecord.bono=+this.value;save()"></span></div>
-    <div class="doc-item"><span class="dname">Cliente cumple 1 año</span><span><input type="number" value="${C.bonoAniversario.pct*100}" style="width:60px" onchange="state.commission.bonoAniversario.pct=this.value/100;save()">% del mes 12</span></div>
-    <div class="doc-item"><span class="dname">Meta grupal: si <b>todos</b> los vendedores llegan a su bono trimestral, c/u gana</span><span>$<input type="number" value="${C.metaGrupalTrim||0}" style="width:80px" onchange="state.commission.metaGrupalTrim=+this.value;save()"></span></div>
+    <div class="doc-item"><span class="dname">Cliente factura > $<input type="number" value="${C.bonoClienteAlto.umbralFactura}" style="width:90px" onchange="state.commission.bonoClienteAlto.umbralFactura=+this.value;saveSettings()"> (primeros 3 meses)</span><span>$<input type="number" value="${C.bonoClienteAlto.bono}" style="width:80px" onchange="state.commission.bonoClienteAlto.bono=+this.value;saveSettings()"></span></div>
+    ${((C.bonoEnvios&&C.bonoEnvios.tiers)||[]).map((t,i)=>`<div class="doc-item"><span class="dname">Cliente cierra con ≥ <input type="number" value="${t.min}" style="width:75px" onchange="state.commission.bonoEnvios.tiers[${i}].min=+this.value;saveSettings()"> envíos/mes</span><span>$<input type="number" value="${t.bono}" style="width:80px" onchange="state.commission.bonoEnvios.tiers[${i}].bono=+this.value;saveSettings()"></span></div>`).join('')}
+    <div class="doc-item"><span class="dname">Récord venta nueva (≥$<input type="number" value="${C.bonoRecord.umbralVenta}" style="width:80px" onchange="state.commission.bonoRecord.umbralVenta=+this.value;saveSettings()">, ≥${C.bonoRecord.minClientes} clientes)</span><span>$<input type="number" value="${C.bonoRecord.bono}" style="width:80px" onchange="state.commission.bonoRecord.bono=+this.value;saveSettings()"></span></div>
+    <div class="doc-item"><span class="dname">Cliente cumple 1 año</span><span><input type="number" value="${C.bonoAniversario.pct*100}" style="width:60px" onchange="state.commission.bonoAniversario.pct=this.value/100;saveSettings()">% del mes 12</span></div>
+    <div class="doc-item"><span class="dname">Meta grupal: si <b>todos</b> los vendedores llegan a su bono trimestral, c/u gana</span><span>$<input type="number" value="${C.metaGrupalTrim||0}" style="width:80px" onchange="state.commission.metaGrupalTrim=+this.value;saveSettings()"></span></div>
   </div>`;
   document.getElementById('commissionConfig').innerHTML=h;
 }
-function addSeller(){const n=document.getElementById('newSellerName').value.trim();if(!n)return;state.sellers.push({id:uid(),name:n});document.getElementById('newSellerName').value='';save();buildSellerSelectors();renderConfig();showToast('Vendedor agregado');}
-function setGoalPerSeller(v){state.goalPerSeller=parseNum(v);save();renderConfig();renderDashboard();showToast('Meta por vendedor actualizada');}
-function renameSeller(id,name){const s=state.sellers.find(x=>x.id===id);if(!s)return;name=String(name||'').trim();if(!name)return;s.name=name;s.nameLocked=true;save();buildSellerSelectors();renderConfig();renderAll();showToast('Nombre actualizado a "'+name+'"');}
-function setSellerScheme(id,val){const s=state.sellers.find(x=>x.id===id);if(!s)return;s.scheme=(val==='viejo')?'viejo':'nuevo';save();renderConfig();renderAll();showToast(s.name+': esquema '+(s.scheme==='viejo'?'viejo (10% venta nueva)':'nuevo (completo)'));}
-function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!confirm('Este vendedor tiene clientes. ¿Quitar?'))return;}state.sellers=state.sellers.filter(s=>s.id!==id);save();buildSellerSelectors();renderAll();}
+function addSeller(){const n=document.getElementById('newSellerName').value.trim();if(!n)return;state.sellers.push({id:uid(),name:n});document.getElementById('newSellerName').value='';saveSellers();buildSellerSelectors();renderConfig();showToast('Vendedor agregado');}
+function setGoalPerSeller(v){state.goalPerSeller=parseNum(v);saveSettings();renderConfig();renderDashboard();showToast('Meta por vendedor actualizada');}
+function renameSeller(id,name){const s=state.sellers.find(x=>x.id===id);if(!s)return;name=String(name||'').trim();if(!name)return;s.name=name;s.nameLocked=true;saveSellers();buildSellerSelectors();renderConfig();renderAll();showToast('Nombre actualizado a "'+name+'"');}
+function setSellerScheme(id,val){const s=state.sellers.find(x=>x.id===id);if(!s)return;s.scheme=(val==='viejo')?'viejo':'nuevo';saveSellers();renderConfig();renderAll();showToast(s.name+': esquema '+(s.scheme==='viejo'?'viejo (10% venta nueva)':'nuevo (completo)'));}
+function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!confirm('Este vendedor tiene clientes. ¿Quitar?'))return;}state.sellers=state.sellers.filter(s=>s.id!==id);saveSellers();buildSellerSelectors();renderAll();}
 
 /* CONFIGS (API + Calc) */
 function loadConfigs(){
