@@ -1576,7 +1576,7 @@ document.getElementById('globalSeller').addEventListener('change',renderAll);
 function activeSeller(){ if(!isAdmin()){ return currentUser&&currentUser.sellerId?currentUser.sellerId:'__self__'; } return document.getElementById('globalSeller').value;}
 function sellerName(id){const s=state.sellers.find(x=>x.id===id);return s?s.name:'—';}
 // Devuelve el id del vendedor por nombre; si no existe, lo crea (la calculadora es la fuente de quién hizo la negociación).
-function sellerByName(name){if(!name)return state.sellers[0]?state.sellers[0].id:null;let s=state.sellers.find(x=>normName(x.name)===normName(name));if(!s){s={id:uid(),name:String(name)};state.sellers.push(s);buildSellerSelectors();}return s.id;}
+function sellerByName(name){const nm=String(name||'').trim();if(!nm)return null;let s=state.sellers.find(x=>normName(x.name)===normName(nm));if(!s){s={id:uid(),name:nm};state.sellers.push(s);buildSellerSelectors();}return s.id;}
 // Normaliza nombres (sin acentos, minúsculas, espacios colapsados) para emparejar.
 function normName(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ');}
 // Clave de IDENTIDAD para unir a la misma persona aunque venga como correo o como nombre:
@@ -1587,13 +1587,14 @@ function identKey(s){s=String(s||'').toLowerCase().normalize('NFD').replace(/[\u
 function prettyName(s){s=String(s||'').trim();if(!s.includes('@'))return s;s=s.slice(0,s.indexOf('@'));return s.replace(/[._\-]+/g,' ').replace(/\s+/g,' ').trim().split(' ').map(w=>w?w[0].toUpperCase()+w.slice(1):w).join(' ');}
 // Vincula la negociación a su vendedor por ID de usuario de la calculadora (robusto, ignora variantes del nombre); si no, por nombre; si no existe, lo crea.
 function sellerForNeg(n){
+  const snm=String(n.seller_name||'').trim();
   let s=null;
   if(n.seller_id)s=state.sellers.find(x=>x.calcSellerId===n.seller_id);
-  if(!s&&n.seller_name)s=state.sellers.find(x=>normName(x.name)===normName(n.seller_name));
-  // Si la negociación no trae nombre de vendedor, NO creamos un "Vendedor" fantasma: queda sin asignar.
-  if(!s){ if(!n.seller_name)return null; s={id:uid(),name:n.seller_name};state.sellers.push(s);buildSellerSelectors(); }
+  if(!s&&snm)s=state.sellers.find(x=>normName(x.name)===normName(snm));
+  // Si la negociación no trae nombre de vendedor, NO creamos un vendedor fantasma/en blanco: queda sin asignar.
+  if(!s){ if(!snm)return null; s={id:uid(),name:snm};state.sellers.push(s);buildSellerSelectors(); }
   if(n.seller_id&&!s.calcSellerId)s.calcSellerId=n.seller_id;
-  if(n.seller_name&&!s.nameLocked)s.name=n.seller_name; // la calculadora manda el nombre, salvo que se haya editado a mano
+  if(snm&&!s.nameLocked)s.name=snm; // la calculadora manda el nombre, salvo que se haya editado a mano
   return s.id;
 }
 function filterBySeller(a){const s=activeSeller();if(s==='all')return a;if(s==='__self__'){const n=((currentUser&&currentUser.name)||'').toLowerCase();return a.filter(c=>(sellerName(c.sellerId)||'').toLowerCase()===n||(c.seller_name||'').toLowerCase()===n);}return a.filter(c=>c.sellerId===s);}
@@ -2008,12 +2009,15 @@ function dedupeSellers(){
 // MÁS AVANZADO (etapa) y con MÁS facturación, le transfiere la facturación del duplicado (no se
 // pierde nada) y borra los repetidos. Es DETERMINISTA: todas las sesiones eligen el mismo a
 // conservar, así no se pelean. Solo debe correr sobre datos frescos de Supabase (dentro de ecoLoad).
+// NO DESTRUCTIVO: solo une duplicados que son LA MISMA negociación de la calculadora (mismo calcSlug).
+// Oculta el repetido SOLO en la vista local y conserva su facturación; NUNCA borra en Supabase.
+// (Ya NO une por "mismo nombre + vendedor": eso podía esconder/borrar prospectos distintos.)
 function dedupeClients(){
   if(!state||!state.clients)return 0;
   const billCount=id=>Object.keys(state.billing[id]||{}).length;
   const groups={};
-  state.clients.forEach(c=>{const k=normName(c.name)+'|'+(c.sellerId||'');if(!normName(c.name))return;(groups[k]=groups[k]||[]).push(c);});
-  const removeIds=[];
+  state.clients.forEach(c=>{const slug=c.calcSlug;if(!slug)return;(groups[slug]=groups[slug]||[]).push(c);});
+  const hideIds=[];
   Object.values(groups).forEach(g=>{
     if(g.length<2)return;
     g.sort((a,b)=>{
@@ -2024,17 +2028,14 @@ function dedupeClients(){
     const keep=g[0];
     g.slice(1).forEach(d=>{
       const db=state.billing[d.id];
-      if(db&&Object.keys(db).length){state.billing[keep.id]=state.billing[keep.id]||{};Object.keys(db).forEach(mk=>{if(!state.billing[keep.id][mk])state.billing[keep.id][mk]=db[mk];});ecoMarkClient(keep.id);}
-      if(!keep.calcSlug&&d.calcSlug){keep.calcSlug=d.calcSlug;keep.calcNegId=keep.calcNegId||d.calcNegId;ecoMarkClient(keep.id);}
-      removeIds.push(d.id);
+      if(db&&Object.keys(db).length){state.billing[keep.id]=state.billing[keep.id]||{};Object.keys(db).forEach(mk=>{if(!state.billing[keep.id][mk])state.billing[keep.id][mk]=db[mk];});}
+      hideIds.push(d.id);
     });
   });
-  if(!removeIds.length)return 0;
-  const rem=new Set(removeIds);
-  state.clients=state.clients.filter(c=>!rem.has(c.id));
-  removeIds.forEach(id=>{delete state.billing[id];});
-  if(ecoOn()){removeIds.forEach(id=>ecoDeleteClient(id));ecoSchedulePush();}
-  return removeIds.length;
+  if(!hideIds.length)return 0;
+  const rem=new Set(hideIds);
+  state.clients=state.clients.filter(c=>!rem.has(c.id));   // SOLO ocultar en la vista; sin ecoDeleteClient
+  return hideIds.length;
 }
 // Solo une vendedores duplicados en la vista (no borra clientes). El dedup de clientes por
 // nombre se eliminó porque podía borrar leads distintos en la base compartida.
@@ -2223,6 +2224,7 @@ async function onAuthed(session){
   ensureViewerSeller();
   applyPermissions();                    // oculta tabs/datos de admin según el rol
   renderAll();
+  try{_ecoLastSig=ecoSignature();}catch(e){}   // base para que el primer poll no re-renderice de gratis
   if(currentView==='usuarios')renderUsuarios();
   hideLoginGate();                       // recién ahora, ya scopeado, mostramos la app
   startEcoPoll();                        // se mantiene al día solo (sin refrescar a mano)
@@ -2231,11 +2233,28 @@ async function onAuthed(session){
 }
 // ---- Auto-actualización de la base compartida ----
 let _ecoPollTimer=null,_ecoListenersOn=false;
+// Firma ligera de los datos: si no cambió, NO re-renderizamos (así el auto-refresh no borra filtros ni el scroll).
+let _ecoLastSig='';
+function ecoSignature(){
+  try{
+    const c=(state.clients||[]).map(x=>x.id+':'+x.stage+':'+(x.sellerId||'')+':'+(x.updatedAt||'')+':'+((x.calcDocs||[]).length)).join('|');
+    const s=(state.sellers||[]).map(x=>x.id+':'+(x.name||'')+':'+(x.scheme||'')).join('|');
+    const p=(state.prospects||[]).map(x=>x.id+':'+(x.status||'')+':'+(x.updatedAt||'')).join('|');
+    const b=Object.keys(state.billing||{}).length;
+    return s+'##'+p+'##'+b+'##'+c;
+  }catch(e){return String(Math.random());}
+}
 async function ecoAutoRefresh(){
-  if(!ecoOn()||_ecoBusy||_ecoDirtyC.size)return;           // no pisar cambios que aún no suben
-  if(document.querySelector('.modal-bg.open'))return;       // no refrescar con un modal abierto
+  if(!ecoOn()||_ecoBusy||_ecoDirtyC.size||_ecoDirtyP.size)return; // no pisar cambios que aún no suben
+  if(document.querySelector('.modal-bg.open'))return;             // no refrescar con un modal abierto
+  if(document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName))return; // no interrumpir mientras se escribe/filtra
   const ok=await ecoLoad();
-  if(ok){buildSellerSelectors();renderAll();if(currentView==='usuarios')renderUsuarios();}
+  if(!ok)return;
+  const sig=ecoSignature();
+  if(sig===_ecoLastSig)return;             // nada cambió → no re-render (conserva filtros y posición)
+  _ecoLastSig=sig;
+  buildSellerSelectors();renderAll();
+  if(currentView==='usuarios')renderUsuarios();
 }
 function startEcoPoll(){
   if(_ecoPollTimer)clearInterval(_ecoPollTimer);
@@ -2824,7 +2843,8 @@ function renderConfig(){
   const es=document.getElementById('ecoStatus');if(es)es.innerHTML=(state&&state.ecoMode)?'<span class="tag green">● Modo compartido (Supabase) activo</span> <span class="muted">los cambios se guardan en la base para todo el equipo.</span>':'<span class="tag" style="color:var(--amber);border-color:#f5d9a8;background:#fdf6e9">● Modo local</span> <span class="muted">los datos viven solo en este navegador.</span>';
   const cg=document.getElementById('cfgCompanyGoal');if(cg)cg.value=goalPerSeller()>0?money(goalPerSeller()):'';
   const split=document.getElementById('cfgGoalSplit');if(split)split.textContent=goalPerSeller()>0?'× '+state.sellers.length+' vendedores = '+money(teamGoal())+' meta grupal':'sin definir';
-  document.getElementById('sellerAdmin').innerHTML=`<div style="display:flex;gap:8px;padding:4px 0;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)"><span style="flex:1">Vendedor (editable)</span><span style="width:160px">Esquema de comisión</span><span style="width:110px;text-align:right">Meta/mes</span><span style="width:60px"></span></div>`+state.sellers.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)"><input value="${(s.name||'').replace(/"/g,'&quot;')}" onchange="renameSeller('${s.id}',this.value)" style="flex:1;font-weight:600" title="Editar nombre del vendedor"><select style="width:160px" onchange="setSellerScheme('${s.id}',this.value)"><option value="nuevo" ${sellerScheme(s.id)==='nuevo'?'selected':''}>Nuevo (completo)</option><option value="viejo" ${sellerScheme(s.id)==='viejo'?'selected':''}>Viejo (10% venta nueva)</option></select><span style="width:110px;text-align:right;font-weight:600">${sellerScheme(s.id)==='viejo'?'—':(goalPerSeller()>0?money(sellerGoal(s.id)):'—')}</span><button class="btn ghost sm" onclick="removeSeller('${s.id}')">Quitar</button></div>`).join('');
+  const ccount=id=>(state.clients||[]).filter(c=>c.sellerId===id).length;
+  document.getElementById('sellerAdmin').innerHTML=`<div style="display:flex;gap:8px;padding:4px 0;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)"><span style="flex:1">Vendedor (editable)</span><span style="width:150px">Esquema de comisión</span><span style="width:70px;text-align:center">Negs.</span><span style="width:150px">Combinar</span><span style="width:55px"></span></div>`+state.sellers.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)"><input value="${(s.name||'').replace(/"/g,'&quot;')}" placeholder="(sin nombre)" onchange="renameSeller('${s.id}',this.value)" style="flex:1;font-weight:600" title="Editar nombre del vendedor"><select style="width:150px" onchange="setSellerScheme('${s.id}',this.value)"><option value="nuevo" ${sellerScheme(s.id)==='nuevo'?'selected':''}>Nuevo (completo)</option><option value="viejo" ${sellerScheme(s.id)==='viejo'?'selected':''}>Viejo (10% venta nueva)</option></select><span style="width:70px;text-align:center;font-weight:600" title="Negociaciones asignadas">${ccount(s.id)}</span><select style="width:150px;font-size:12px" title="Mover sus negociaciones a otro vendedor y borrar este registro duplicado" onchange="promptMergeSeller('${s.id}',this.value);this.value='';"><option value="">Combinar con…</option>${state.sellers.filter(x=>x.id!==s.id).map(x=>`<option value="${x.id}">${(x.name||'(sin nombre)').replace(/"/g,'&quot;')}</option>`).join('')}</select><button class="btn ghost sm" onclick="removeSeller('${s.id}')">Quitar</button></div>`).join('');
   const C=state.commission;
   let h='<div class="tablewrap"><table><thead><tr><th>Venta mensual</th><th>Comisión</th></tr></thead><tbody>';
   C.ventasPropias.forEach((t,i)=>h+=`<tr><td>${money(t.min)} – ${t.max===Infinity?'∞':money(t.max)}</td><td><input type="number" value="${t.pct*100}" style="width:70px" onchange="state.commission.ventasPropias[${i}].pct=this.value/100;saveSettings()">%</td></tr>`);
@@ -2848,7 +2868,29 @@ function addSeller(){const n=document.getElementById('newSellerName').value.trim
 function setGoalPerSeller(v){state.goalPerSeller=parseNum(v);saveSettings();renderConfig();renderDashboard();showToast('Meta por vendedor actualizada');}
 function renameSeller(id,name){const s=state.sellers.find(x=>x.id===id);if(!s)return;name=String(name||'').trim();if(!name)return;s.name=name;s.nameLocked=true;saveSellers();buildSellerSelectors();renderConfig();renderAll();showToast('Nombre actualizado a "'+name+'"');}
 function setSellerScheme(id,val){const s=state.sellers.find(x=>x.id===id);if(!s)return;s.scheme=(val==='viejo')?'viejo':'nuevo';saveSellers();renderConfig();renderAll();showToast(s.name+': esquema '+(s.scheme==='viejo'?'viejo (10% venta nueva)':'nuevo (completo)'));}
-function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!confirm('Este vendedor tiene clientes. ¿Quitar?'))return;}state.sellers=state.sellers.filter(s=>s.id!==id);saveSellers();buildSellerSelectors();renderAll();}
+function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!confirm('Este vendedor tiene clientes. ¿Quitar?'))return;}state.sellers=state.sellers.filter(s=>s.id!==id);ecoDeleteSeller(id);saveSellers();buildSellerSelectors();renderAll();}
+// Combina dos vendedores: mueve TODAS las negociaciones del origen al destino y borra el registro
+// vacío. NO se pierde ninguna negociación (solo se reasigna el vendedor). Permanente (Supabase).
+function mergeSellerInto(fromId,toId){
+  if(!fromId||!toId||fromId===toId)return;
+  const from=state.sellers.find(s=>s.id===fromId), to=state.sellers.find(s=>s.id===toId);
+  if(!from||!to)return;
+  let moved=0;
+  (state.clients||[]).forEach(c=>{if(c.sellerId===fromId){c.sellerId=toId;ecoMarkClient(c.id);moved++;}});
+  if(!to.calcSellerId&&from.calcSellerId)to.calcSellerId=from.calcSellerId;
+  if(!to.nameLocked&&from.nameLocked&&from.name){to.name=from.name;to.nameLocked=true;}
+  state.sellers=state.sellers.filter(s=>s.id!==fromId);
+  ecoDeleteSeller(fromId);                 // queda sin clientes → borrarlo es seguro
+  saveSellers(); ecoSchedulePush();
+  buildSellerSelectors(); renderAll();
+  try{_ecoLastSig=ecoSignature();}catch(e){}
+  showToast('Combinado: '+moved+' negociación(es) movida(s) a "'+to.name+'"');
+}
+function promptMergeSeller(fromId,toId){
+  if(!toId)return; const f=state.sellers.find(s=>s.id===fromId), t=state.sellers.find(s=>s.id===toId); if(!f||!t)return;
+  const cnt=(state.clients||[]).filter(c=>c.sellerId===fromId).length;
+  if(confirm('Mover las '+cnt+' negociación(es) de "'+(f.name||'(sin nombre)')+'" a "'+t.name+'" y eliminar el registro duplicado.\n\nNo se borra ninguna negociación. ¿Continuar?')) mergeSellerInto(fromId,toId);
+}
 
 /* CONFIGS (API + Calc) */
 function loadConfigs(){
