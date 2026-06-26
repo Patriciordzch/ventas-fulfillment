@@ -127,6 +127,18 @@
   .field{display:flex;flex-direction:column;gap:5px}
   .field label{font-size:12px;color:var(--muted);font-weight:700}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .ui-dialog-bg{position:fixed;inset:0;z-index:600;background:rgba(12,28,52,.42);display:none;align-items:center;justify-content:center;padding:20px}
+  .ui-dialog-bg.open{display:flex}
+  .ui-dialog-card{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 64px rgba(0,40,90,.24);width:100%;max-width:390px;padding:24px 24px 18px;text-align:left;animation:uiDlgIn .14s ease}
+  @keyframes uiDlgIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  .ui-dialog-card .ui-dlg-ico{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--brand-light);margin-bottom:13px}
+  .ui-dialog-card h3{margin:0 0 7px;color:var(--navy);font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+  .ui-dialog-card p{margin:0 0 18px;color:#475569;font-size:13.5px;line-height:1.55;white-space:pre-line}
+  .ui-dialog-card input{width:100%;margin:-6px 0 18px}
+  .ui-dialog-actions{display:flex;justify-content:flex-end;gap:9px}
+  .ui-dialog-card.danger .ui-dlg-ico{background:#fdecec}
+  .ui-dialog-card.danger h3{color:#c0392b}
+  .ui-dialog-card.danger #uiDialogOk{background:#c0392b;border-color:#c0392b;color:#fff}
   .eco-pill{position:fixed;right:18px;bottom:18px;z-index:480;background:var(--navy,#003875);color:#fff;border:none;border-radius:24px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 10px 28px rgba(0,40,90,.28);display:flex;align-items:center;gap:6px}
   .eco-pill:hover{filter:brightness(1.08)}
   .centro-pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
@@ -768,6 +780,20 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Diálogo (confirmar / avisar / preguntar) con el diseño de la app -->
+<div class="ui-dialog-bg" id="uiDialog">
+  <div class="ui-dialog-card">
+    <div class="ui-dlg-ico" id="uiDialogIco">❓</div>
+    <h3 id="uiDialogTitle"></h3>
+    <p id="uiDialogMsg"></p>
+    <input id="uiDialogInput" style="display:none">
+    <div class="ui-dialog-actions">
+      <button class="btn ghost sm" id="uiDialogCancel">Cancelar</button>
+      <button class="btn sm" id="uiDialogOk">Aceptar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    ENVÍA FULFILLMENT · Ventas y Comisiones
@@ -1387,7 +1413,7 @@ function updProspect(id,field,val){const p=(state.prospects||[]).find(x=>x.id===
   p[field]=val;p.updatedAt=nowISO();ecoMarkProspect(id);save();
   if(field==='status')renderLeads();
 }
-function deleteProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;if(!confirm('¿Eliminar este lead de prospección?'))return;state.prospects=state.prospects.filter(x=>x.id!==id);ecoDeleteProspect(id);save();renderLeads();showToast('Lead eliminado');}
+async function deleteProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;if(!(await uiConfirm('¿Eliminar este lead de prospección?',{title:'Eliminar lead',danger:true,okText:'Eliminar'})))return;state.prospects=state.prospects.filter(x=>x.id!==id);ecoDeleteProspect(id);save();renderLeads();showToast('Lead eliminado');}
 function convertProspect(id){const p=(state.prospects||[]).find(x=>x.id===id);if(!p)return;
   if(!(p.name||'').trim()){showToast('Ponle nombre de empresa antes de pasarlo al Pipeline');renderLeads();return;}
   const c={id:uid(),name:p.name,sellerId:p.sellerId||(isAdmin()?(state.sellers[0]?state.sellers[0].id:null):currentSellerId()),stage:'lead',contact:p.contact||'',email:p.email||'',phone:p.phone||'',service:'Fulfillment',source:'Prospección',shipments:0,closeDate:'',startMonth:'',notes:p.notes||'',docs:{},history:[{stage:'lead',at:nowISO()}],createdAt:nowISO(),updatedAt:nowISO()};
@@ -1502,7 +1528,7 @@ function renderVendedores(){
   const cicloHtml=`<div class="muted" style="font-size:12.5px;margin-bottom:14px">Tiempo de ciclo (prom.): Lead→Contrato <b style="color:var(--navy)">${af!=null?af+' d':'—'}</b> · Contrato→Inventario <b style="color:var(--navy)">${afi!=null?afi+' d':'—'}</b> · Ciclo total (lead→inventario) <b style="color:var(--green)">${ai!=null?ai+' d':'—'}</b></div>`;
   // Seguimientos y bitácora del vendedor (todas sus tareas abiertas + últimas interacciones)
   const _td=new Date().toISOString().slice(0,10);
-  let segT=[];m.cl.forEach(c=>(c.tasks||[]).forEach(t=>{if(!t.done)segT.push({c,t});}));
+  let segT=[];m.cl.forEach(c=>{(c.tasks||[]).forEach(t=>{if(!t.done)segT.push({c,t});});if(c.leadStatus==='futuro'&&c.nextContact)segT.push({c,t:{text:'⏳ Contactar (interés a futuro)',due:c.nextContact}});});
   segT.sort((a,b)=>((a.t.due||'9999')<(b.t.due||'9999')?-1:1));
   let segA=[];m.cl.forEach(c=>(c.activities||[]).forEach(a=>segA.push({c,a})));
   segA.sort((x,y)=>x.a.at<y.a.at?1:-1);
@@ -1769,7 +1795,7 @@ function renderAlerts(sel,clients,mk){
   const legend=`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-top:6px">`+qm.map((m,i)=>`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:${segCols[i]};display:inline-block"></span>Mes ${i+1} · ${monthName(m).slice(0,3)}: <b>${money(seg[i])}</b></span>`).join('')+`</div>`;
   const headColor=pct>=100?'var(--green)':'var(--navy)';
   let bonoPanel=`<div class="panel" style="margin-bottom:10px;border-left:3px solid var(--green)"><div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:7px"><h3 style="margin:0">Avance al bono trimestral · ${qKey}</h3><div style="font-size:13px"><b style="color:${headColor}">${money(bSales)}</b> <span class="muted">de ${money(bTarget)} · ${pct}%</span></div></div>${barHtml}${legend}<div class="muted" style="font-size:12px;margin-top:7px">${bSub}${cerca.length?` · ${cerca.length} cliente(s) rumbo al bono de envíos (${numFmt(um)}/mes)`:''}</div></div>`;
-  if(schemeViejo){bonoPanel=`<div class="panel" style="margin-bottom:10px;border-left:3px solid #1e6fd9"><b>Tu comisión:</b> 10% sobre venta nueva. <span class="muted">Tu esquema no incluye bono trimestral ni comisión de cartera.</span></div>`;}
+  if(schemeViejo){bonoPanel=`<div class="panel" style="margin-bottom:10px;border-left:3px solid var(--green)"><b>Tu comisión:</b> 10% sobre cada venta nueva que cierres. <span class="muted">Cada cliente nuevo = 10% de su facturación base (mes 1/2).</span></div>`;}
   const adm=isAdmin();
   const row=(c,right,rc)=>`<div class="alert-row" onclick="openClientModal('${c.id}')"><span>${c.name} <span class="muted">· ${stName(c.stage)}${adm?' · '+sellerName(c.sellerId):''}</span></span><span style="font-weight:600;color:${rc||'var(--muted-2)'}">${right}</span></div>`;
   const staleItems=stale.slice(0,6).map(c=>row(c,Math.floor((now-Date.parse(c.updatedAt))/864e5)+' d','#c0392b')).join('');
@@ -1779,7 +1805,7 @@ function renderAlerts(sel,clients,mk){
     ${bonoPanel}
     <div class="dash-2col">
       ${card('🕒 Leads estancados <span class="muted" style="font-weight:500;font-size:12px">('+stale.length+', +'+STALE_DAYS+'d sin moverse)</span>'+(stale.length>6?' <span class="clickable" style="float:right;font-size:12px;color:var(--navy)" onclick="drillStale()">Ver todos ›</span>':''),staleItems,'Nada estancado, bien ahí.')}
-      ${card('⚠ Bajas — 2+ meses sin facturar <span class="muted" style="font-weight:500;font-size:12px">('+risk.length+')</span>'+(risk.length>6?' <span class="clickable" style="float:right;font-size:12px;color:var(--navy)" onclick="drillRiskChurn()">Ver todas ›</span>':''),riskItems,'Sin bajas: toda la cartera al corriente.')}
+      ${schemeViejo?'':card('⚠ Bajas — 2+ meses sin facturar <span class="muted" style="font-weight:500;font-size:12px">('+risk.length+')</span>'+(risk.length>6?' <span class="clickable" style="float:right;font-size:12px;color:var(--navy)" onclick="drillRiskChurn()">Ver todas ›</span>':''),riskItems,'Sin bajas: toda la cartera al corriente.')}
     </div>`;
 }
 
@@ -1825,7 +1851,7 @@ function cardHTML(c){const dd=Object.values(c.docs||{}).filter(Boolean).length;c
 let dragId=null;
 function attachDnD(){
   document.querySelectorAll('.card').forEach(card=>{card.addEventListener('dragstart',e=>{dragId=card.dataset.id;e.stopPropagation();setTimeout(()=>card.style.opacity='.4',0);});card.addEventListener('dragend',()=>card.style.opacity='1');});
-  document.querySelectorAll('.col').forEach(col=>{col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('drop-hover');});col.addEventListener('dragleave',()=>col.classList.remove('drop-hover'));col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('drop-hover');const stage=col.dataset.stage;const c=state.clients.find(x=>x.id===dragId);if(c&&changeStage(c,stage)){ if(stage===LOST_STAGE){const r=prompt('¿Por qué se perdió "'+c.name+'"? (razón)',c.lostReason||'');if(r!==null)c.lostReason=r.trim();c.lostAt=nowISO();} touch(c);save();slackScan();renderAll();showToast(`${c.name} → ${STAGES.find(s=>s.id===stage).name}`);}});});
+  document.querySelectorAll('.col').forEach(col=>{col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('drop-hover');});col.addEventListener('dragleave',()=>col.classList.remove('drop-hover'));col.addEventListener('drop',async e=>{e.preventDefault();col.classList.remove('drop-hover');const stage=col.dataset.stage;const c=state.clients.find(x=>x.id===dragId);if(c&&changeStage(c,stage)){ if(stage===LOST_STAGE){const r=await uiPrompt('¿Por qué se perdió esta negociación?',c.lostReason||'',{title:'Perdimos a "'+c.name+'"',placeholder:'Ej. Precio, competencia, no respondió…',okText:'Guardar'});if(r!==null)c.lostReason=r.trim();c.lostAt=nowISO();} touch(c);save();slackScan();renderAll();showToast(`${c.name} → ${STAGES.find(s=>s.id===stage).name}`);}});});
 }
 
 /* CLIENTES */
@@ -1997,7 +2023,7 @@ function ecoStatusMsg(html,err){const el=document.getElementById('ecoStatus');if
 // Sube los datos actuales (localStorage) a Supabase y activa el modo compartido.
 async function migrateToSupabase(){
   const sb=getSb(); if(!sb){ecoStatusMsg('No hay conexión a Supabase (revisa la llave en Configuración).',true);return;}
-  if(!confirm('Subir tus datos actuales a la base compartida (Supabase)? Esto la deja como la fuente para todos.'))return;
+  if(!(await uiConfirm('¿Subir tus datos actuales a la base compartida (Supabase)? Esto la deja como la fuente para todo el equipo.',{title:'Subir a Supabase',okText:'Subir'})))return;
   ecoStatusMsg('Subiendo a Supabase… no cierres la página.');
   try{
     const {data:sess}=await sb.auth.getSession();
@@ -2504,7 +2530,7 @@ function saveClient(){
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
   save();slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
-function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!confirm('¿Eliminar este cliente por completo (aquí y en la calculadora) y su facturación?'))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
+async function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!(await uiConfirm('Se eliminará por completo (aquí y en la calculadora), junto con su facturación.',{title:'¿Eliminar '+(c0?'"'+c0.name+'"':'cliente')+'?',danger:true,okText:'Eliminar'})))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
 // Lista de "borrados" (tombstone) compartida: se guarda dentro de la config (eco_settings) para que
 // las negociaciones eliminadas NO reaparezcan al re-importar de la calculadora ni al recargar.
 function deletedSet(){ state.commission=state.commission||{}; if(!Array.isArray(state.commission.__deleted))state.commission.__deleted=[]; return state.commission.__deleted; }
@@ -2523,8 +2549,8 @@ async function deleteCalcNegotiation(slug,docs){
 }
 // Elimina por completo una negociación desde su tarjeta (con confirmación). Borra en la app, en Supabase
 // compartido y en la CALCULADORA; y la deja en la lista de borrados para que no vuelva a importarse.
-function deleteClientById(id,ev){ if(ev){ev.stopPropagation();} const c=state.clients.find(x=>x.id===id); if(!c)return;
-  if(!confirm('¿Eliminar por completo "'+c.name+'"?\nSe borra aquí y también en la calculadora (negociación, documentos y archivos).\n\nEsta acción NO se puede deshacer.'))return;
+async function deleteClientById(id,ev){ if(ev){ev.stopPropagation();} const c=state.clients.find(x=>x.id===id); if(!c)return;
+  if(!(await uiConfirm('Se borra aquí y también en la calculadora (negociación, documentos y archivos). Esta acción no se puede deshacer.',{title:'¿Eliminar "'+c.name+'"?',danger:true,okText:'Eliminar'})))return;
   tombstoneClient(c);
   const slug=c.calcSlug, docs=(c.calcDocs||[]).slice();
   ecoBackupDeleted(c, state.billing[id]||{});   // respaldo en Supabase (papelera) antes de borrar
@@ -2972,7 +2998,7 @@ function addSeller(){const n=document.getElementById('newSellerName').value.trim
 function setGoalPerSeller(v){state.goalPerSeller=parseNum(v);saveSettings();renderConfig();renderDashboard();showToast('Meta por vendedor actualizada');}
 function renameSeller(id,name){const s=state.sellers.find(x=>x.id===id);if(!s)return;name=String(name||'').trim();if(!name)return;s.name=name;s.nameLocked=true;saveSellers();buildSellerSelectors();renderConfig();renderAll();showToast('Nombre actualizado a "'+name+'"');}
 function setSellerScheme(id,val){const s=state.sellers.find(x=>x.id===id);if(!s)return;s.scheme=(val==='viejo')?'viejo':'nuevo';saveSellers();renderConfig();renderAll();showToast(s.name+': esquema '+(s.scheme==='viejo'?'viejo (10% venta nueva)':'nuevo (completo)'));}
-function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!confirm('Este vendedor tiene clientes. ¿Quitar?'))return;}state.sellers=state.sellers.filter(s=>s.id!==id);ecoDeleteSeller(id);saveSellers();buildSellerSelectors();renderAll();}
+async function removeSeller(id){if(state.clients.some(c=>c.sellerId===id)){if(!(await uiConfirm('Este vendedor tiene negociaciones asignadas. Si lo quitas, quedarán sin vendedor.',{title:'¿Quitar vendedor?',danger:true,okText:'Quitar'})))return;}state.sellers=state.sellers.filter(s=>s.id!==id);ecoDeleteSeller(id);saveSellers();buildSellerSelectors();renderAll();}
 // Combina dos vendedores: mueve TODAS las negociaciones del origen al destino y borra el registro
 // vacío. NO se pierde ninguna negociación (solo se reasigna el vendedor). Permanente (Supabase).
 function mergeSellerInto(fromId,toId){
@@ -2990,10 +3016,10 @@ function mergeSellerInto(fromId,toId){
   try{_ecoLastSig=ecoSignature();}catch(e){}
   showToast('Combinado: '+moved+' negociación(es) movida(s) a "'+to.name+'"');
 }
-function promptMergeSeller(fromId,toId){
+async function promptMergeSeller(fromId,toId){
   if(!toId)return; const f=state.sellers.find(s=>s.id===fromId), t=state.sellers.find(s=>s.id===toId); if(!f||!t)return;
   const cnt=(state.clients||[]).filter(c=>c.sellerId===fromId).length;
-  if(confirm('Mover las '+cnt+' negociación(es) de "'+(f.name||'(sin nombre)')+'" a "'+t.name+'" y eliminar el registro duplicado.\n\nNo se borra ninguna negociación. ¿Continuar?')) mergeSellerInto(fromId,toId);
+  if(await uiConfirm('Mover las '+cnt+' negociación(es) de "'+(f.name||'(sin nombre)')+'" a "'+t.name+'" y eliminar el registro duplicado. No se borra ninguna negociación.',{title:'¿Combinar vendedores?',okText:'Combinar'})) mergeSellerInto(fromId,toId);
 }
 
 /* CONFIGS (API + Calc) */
@@ -3136,7 +3162,7 @@ function updateApiStatus(){const live=state.api&&state.api.connected;document.ge
 /* DATA IO */
 function exportData(){downloadFile('envia-ventas-backup.json',JSON.stringify(state,null,2));}
 function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);save();initUI();showToast('Datos importados');}catch(err){showToast('Archivo inválido');}};r.readAsText(f);}
-function wipeData(){if(!confirm('¿Borrar TODOS los datos?'))return;try{const ls=_ls();if(ls)ls.removeItem('enviaVentas');}catch(e){}_mem=null;state=null;seedDemo(true);}
+async function wipeData(){if(!(await uiConfirm('Se borrarán TODOS los datos locales de este navegador. Esta acción no se puede deshacer.',{title:'¿Borrar todos los datos?',danger:true,okText:'Borrar todo'})))return;try{const ls=_ls();if(ls)ls.removeItem('enviaVentas');}catch(e){}_mem=null;state=null;seedDemo(true);}
 function downloadFile(name,content){const b=new Blob([content],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
 /* ---------- REPORTES (CSV con fechas) ---------- */
@@ -3209,6 +3235,36 @@ function importLeads(e){const f=e.target.files[0];if(!f)return;const fname=(f.na
 
 /* TOAST */
 let toastT;function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),3400);}
+
+/* DIÁLOGO (reemplaza confirm/prompt/alert nativos con un modal del diseño de la app) */
+let _uiDlgResolve=null,_uiDlgMode='confirm';
+function _uiDlgClose(val){const bg=document.getElementById('uiDialog');if(bg)bg.classList.remove('open');const r=_uiDlgResolve;_uiDlgResolve=null;if(r)r(val);}
+function uiDialog(o){o=o||{};return new Promise(res=>{
+  _uiDlgResolve=res;_uiDlgMode=o.mode||'confirm';
+  const bg=document.getElementById('uiDialog');if(!bg){res(o.mode==='prompt'?(o.defaultValue||''):true);return;}
+  const card=bg.querySelector('.ui-dialog-card');
+  document.getElementById('uiDialogIco').textContent=o.icon||(o.danger?'⚠️':(o.mode==='prompt'?'✏️':(o.mode==='alert'?'ℹ️':'❓')));
+  document.getElementById('uiDialogTitle').textContent=o.title||(o.mode==='alert'?'Aviso':(o.mode==='prompt'?'Escribe':'¿Confirmar?'));
+  document.getElementById('uiDialogMsg').textContent=o.message||'';
+  const inp=document.getElementById('uiDialogInput');
+  if(o.mode==='prompt'){inp.style.display='';inp.value=o.defaultValue||'';inp.placeholder=o.placeholder||'';}else inp.style.display='none';
+  const ok=document.getElementById('uiDialogOk'),cancel=document.getElementById('uiDialogCancel');
+  ok.textContent=o.okText||(o.mode==='alert'?'Entendido':'Aceptar');
+  cancel.textContent=o.cancelText||'Cancelar';cancel.style.display=(o.mode==='alert')?'none':'';
+  card.classList.toggle('danger',!!o.danger);
+  bg.classList.add('open');
+  setTimeout(()=>{(o.mode==='prompt'?inp:ok).focus();if(o.mode==='prompt')inp.select&&inp.select();},30);
+});}
+function uiConfirm(message,opts){return uiDialog(Object.assign({mode:'confirm',message},opts||{}));}
+function uiPrompt(message,defaultValue,opts){return uiDialog(Object.assign({mode:'prompt',message,defaultValue},opts||{}));}
+function uiAlert(message,opts){return uiDialog(Object.assign({mode:'alert',message},opts||{}));}
+(function(){var ok=document.getElementById('uiDialogOk'),ca=document.getElementById('uiDialogCancel'),bg=document.getElementById('uiDialog'),inp=document.getElementById('uiDialogInput');
+  if(ok)ok.onclick=()=>_uiDlgClose(_uiDlgMode==='prompt'?document.getElementById('uiDialogInput').value:true);
+  if(ca)ca.onclick=()=>_uiDlgClose(_uiDlgMode==='prompt'?null:false);
+  if(bg)bg.addEventListener('mousedown',e=>{if(e.target===bg)_uiDlgClose(_uiDlgMode==='prompt'?null:false);});
+  if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();_uiDlgClose(inp.value);}else if(e.key==='Escape')_uiDlgClose(null);});
+  document.addEventListener('keydown',e=>{const b=document.getElementById('uiDialog');if(!b||!b.classList.contains('open'))return;if(e.key==='Escape')_uiDlgClose(_uiDlgMode==='prompt'?null:false);else if(e.key==='Enter'&&_uiDlgMode!=='prompt')_uiDlgClose(true);});
+})();
 
 /* BOOT */
 if(!state)seedDemo();
