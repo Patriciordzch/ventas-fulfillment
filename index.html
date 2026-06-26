@@ -1915,6 +1915,9 @@ async function ecoFlush(){
   }catch(e){console.warn('ecoFlush',e);} _ecoBusy=false;
 }
 async function ecoDeleteClient(id){if(!ecoOn())return;try{await getSb().from('eco_clients').delete().eq('id',id);}catch(e){}}
+// Respaldo (papelera) en Supabase: guarda la negociación completa + su facturación antes de borrarla.
+// Si la tabla eco_deleted no existe aún, no rompe (se ignora el error).
+async function ecoBackupDeleted(c,billing){ if(!ecoOn()||!c)return; try{ await getSb().from('eco_deleted').upsert({id:c.id,name:c.name||'',calc_slug:c.calcSlug||null,client:c,billing:billing||{},deleted_by:(currentUser&&currentUser.name)||'',deleted_at:nowISO()}); }catch(e){console.warn('backup eco_deleted',e&&e.message);} }
 async function ecoDeleteSeller(id){if(!ecoOn())return;try{await getSb().from('eco_sellers').delete().eq('id',id);}catch(e){}}
 async function ecoLoad(){
   const sb=getSb(); if(!sb)return false;
@@ -2457,7 +2460,7 @@ function saveClient(){
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
   save();slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
-function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!confirm('¿Eliminar este cliente por completo (aquí y en la calculadora) y su facturación?'))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
+function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!confirm('¿Eliminar este cliente por completo (aquí y en la calculadora) y su facturación?'))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
 // Lista de "borrados" (tombstone) compartida: se guarda dentro de la config (eco_settings) para que
 // las negociaciones eliminadas NO reaparezcan al re-importar de la calculadora ni al recargar.
 function deletedSet(){ state.commission=state.commission||{}; if(!Array.isArray(state.commission.__deleted))state.commission.__deleted=[]; return state.commission.__deleted; }
@@ -2480,6 +2483,7 @@ function deleteClientById(id,ev){ if(ev){ev.stopPropagation();} const c=state.cl
   if(!confirm('¿Eliminar por completo "'+c.name+'"?\nSe borra aquí y también en la calculadora (negociación, documentos y archivos).\n\nEsta acción NO se puede deshacer.'))return;
   tombstoneClient(c);
   const slug=c.calcSlug, docs=(c.calcDocs||[]).slice();
+  ecoBackupDeleted(c, state.billing[id]||{});   // respaldo en Supabase (papelera) antes de borrar
   state.clients=state.clients.filter(x=>x.id!==id); delete state.billing[id]; ecoDeleteClient(id);
   if(slug)deleteCalcNegotiation(slug,docs);
   saveSettings(); save(); renderAll(); showToast('Negociación eliminada: '+c.name);
