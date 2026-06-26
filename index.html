@@ -2987,22 +2987,29 @@ function slackScan(){
     (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
       SLACK_EVENTS.forEach(e=>{
         if(slackEventActive(e.k,c)&&!c.slack[e.k]){
-          c.slack[e.k]=1; ecoMarkClient(c.id);
-          if(e.k==='docs'&&wh.docsfn){ slackNotifyDocs(c); sent++; }   // ZIP adjunto + botones Aprobar/Rechazar (función)
-          else if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;}
+          if(e.k==='docs'&&wh.docsfn){ slackNotifyDocs(c); }            // marca SOLO si la función confirma OK (auto-reintenta)
+          else { c.slack[e.k]=1; ecoMarkClient(c.id); if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;} }
         }
       });
     });
     if(sent){save();}
   }catch(e){}
 }
-// Envía el evento de documentos a la función slack-docs (que arma el ZIP y publica con botones Aprobar/Rechazar).
+// Envía el evento de documentos a la función slack-docs (arma el ZIP y publica con botones).
+// Solo marca como enviado (c.slack.docs=1) si la función responde OK; si falla (403, función caída, etc.)
+// NO quema la marca, así que se reintenta solo en el siguiente sondeo hasta que funcione.
+let _slackDocsBusy={};
 function slackNotifyDocs(c){
   const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
+  if(_slackDocsBusy[c.id])return; _slackDocsBusy[c.id]=1;
   const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
     docs:(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type})),
     legal_status:(c.legal&&c.legal.status)||'pendiente'};
-  try{fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){}
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(r=>r.ok)
+    .then(ok=>{ if(ok){ c.slack=c.slack||{}; c.slack.docs=1; ecoMarkClient(c.id); save(); } })
+    .catch(()=>{})
+    .finally(()=>{ delete _slackDocsBusy[c.id]; });
 }
 function slackTest(event){ const url=(slackCfg().webhooks||{})[event];
   if(!url){showToast('Pega primero el webhook de ese evento y Guarda');return;}
