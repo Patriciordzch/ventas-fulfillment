@@ -1284,7 +1284,7 @@ async function autoSyncCalc(){
     const negs=res.data||[]; const ids=negs.map(n=>n.id).filter(Boolean); const docsByNeg={};
     if(ids.length){const dr=await sbr.from('documents').select('*').in('negotiation_id',ids); if(!dr.error)(dr.data||[]).forEach(d=>{(docsByNeg[d.negotiation_id]=docsByNeg[d.negotiation_id]||[]).push(d);});}
     let changed=0;
-    negs.forEach(n=>{ if(!n.slug)return;
+    negs.forEach(n=>{ if(!n.slug)return; if(deletedSet().includes(n.slug))return;   // omitir negociaciones eliminadas
       let c=state.clients.find(x=>x.calcSlug===n.slug||clientSlug(x)===n.slug||x.name.toLowerCase()===String(n.client||'').toLowerCase());
       let isNew=false;
       if(!c){ c={id:uid(),name:n.client||n.slug,sellerId:sellerForNeg(n),contact:'',email:'',phone:'',service:'Fulfillment',shipments:0,closeDate:'',startMonth:'',notes:'Importado de Calculadora',docs:{},calcParams:{},calcSlug:n.slug}; state.clients.push(c); isNew=true; }
@@ -1944,6 +1944,7 @@ async function ecoLoad(){
     calendlyLeadsToDemo();       // los leads de Calendly entran a "Demo agendado"
     dedupeClients(); // une clientes duplicados (mismo nombre+vendedor) conservando el más avanzado + su facturación
     filterBlockedCalendly(); // oculta leads de anfitriones de otros países (mauricio.tinjaca, rosmary.rivas)
+    filterDeleted();         // omite las negociaciones que se eliminaron por completo
     save();
     slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
     slackMaybeDigest();  // envía el resumen si toca (diario/semanal)
@@ -2456,11 +2457,32 @@ function saveClient(){
   if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
   save();slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
-function deleteClient(){if(!editingClientId)return;if(!confirm('¿Eliminar este cliente y su facturación?'))return;const _id=editingClientId;state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);save();closeClientModal();renderAll();showToast('Cliente eliminado');}
-// Elimina por completo una negociación desde su tarjeta (con confirmación). Borra también en Supabase.
+function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!confirm('¿Eliminar este cliente por completo (aquí y en la calculadora) y su facturación?'))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
+// Lista de "borrados" (tombstone) compartida: se guarda dentro de la config (eco_settings) para que
+// las negociaciones eliminadas NO reaparezcan al re-importar de la calculadora ni al recargar.
+function deletedSet(){ state.commission=state.commission||{}; if(!Array.isArray(state.commission.__deleted))state.commission.__deleted=[]; return state.commission.__deleted; }
+function tombstoneClient(c){ const d=deletedSet(); if(c.calcSlug&&!d.includes(c.calcSlug))d.push(c.calcSlug); if(c.id&&!d.includes(c.id))d.push(c.id); }
+function filterDeleted(){ const d=deletedSet(); if(!d.length||!state.clients)return; state.clients=state.clients.filter(c=>!d.includes(c.id)&&!(c.calcSlug&&d.includes(c.calcSlug))); }
+// Borra la negociación TAMBIÉN en la calculadora: archivos del storage, filas de documents y la
+// negociación (por slug). Va en su propio try para no romper si RLS bloquea algo.
+async function deleteCalcNegotiation(slug,docs){
+  const sb=getSb(); if(!sb||!slug)return;
+  try{
+    try{ const paths=(docs||[]).map(d=>d.storage_path).filter(Boolean); if(paths.length)await sb.storage.from(CALC_DOCS_BUCKET).remove(paths); }catch(e){}
+    let negId=null; try{ const r=await sb.from('negotiations').select('id').eq('slug',slug).limit(1); negId=r.data&&r.data[0]&&r.data[0].id; }catch(e){}
+    if(negId){ try{ await sb.from('documents').delete().eq('negotiation_id',negId); }catch(e){} }
+    await sb.from('negotiations').delete().eq('slug',slug);
+  }catch(e){ console.warn('deleteCalcNegotiation',e); }
+}
+// Elimina por completo una negociación desde su tarjeta (con confirmación). Borra en la app, en Supabase
+// compartido y en la CALCULADORA; y la deja en la lista de borrados para que no vuelva a importarse.
 function deleteClientById(id,ev){ if(ev){ev.stopPropagation();} const c=state.clients.find(x=>x.id===id); if(!c)return;
-  if(!confirm('¿Eliminar por completo "'+c.name+'" y su facturación?\n\nEsta acción NO se puede deshacer.'))return;
-  state.clients=state.clients.filter(x=>x.id!==id); delete state.billing[id]; ecoDeleteClient(id); save(); renderAll(); showToast('Negociación eliminada: '+c.name);
+  if(!confirm('¿Eliminar por completo "'+c.name+'"?\nSe borra aquí y también en la calculadora (negociación, documentos y archivos).\n\nEsta acción NO se puede deshacer.'))return;
+  tombstoneClient(c);
+  const slug=c.calcSlug, docs=(c.calcDocs||[]).slice();
+  state.clients=state.clients.filter(x=>x.id!==id); delete state.billing[id]; ecoDeleteClient(id);
+  if(slug)deleteCalcNegotiation(slug,docs);
+  saveSettings(); save(); renderAll(); showToast('Negociación eliminada: '+c.name);
 }
 function updBill(cid,mk,f,v){if(!state.billing[cid])state.billing[cid]={};if(!state.billing[cid][mk])state.billing[cid][mk]={amount:0,orders:0,shipments:0};state.billing[cid][mk][f]=+v||0;touch(state.clients.find(x=>x.id===cid));save();renderBilling();renderDashboard();}
 
