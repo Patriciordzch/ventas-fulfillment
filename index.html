@@ -1939,6 +1939,7 @@ async function ecoLoad(){
     assignOrphanCalendlyLeads(); // reasigna leads de Calendly sin vendedor (solo rellena; nunca borra)
     calendlyLeadsToDemo();       // los leads de Calendly entran a "Demo agendado"
     dedupeClients(); // une clientes duplicados (mismo nombre+vendedor) conservando el más avanzado + su facturación
+    filterBlockedCalendly(); // oculta leads de anfitriones de otros países (mauricio.tinjaca, rosmary.rivas)
     save();
     slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
     slackMaybeDigest();  // envía el resumen si toca (diario/semanal)
@@ -2086,6 +2087,17 @@ function calendlyLeadsToDemo(){
   });
   if(n&&ecoOn())ecoSchedulePush();
   return n;
+}
+// Anfitriones de Calendly de OTROS PAÍSES: sus citas no deben aparecer aquí. Se ocultan en la vista
+// (no se borran de Supabase). Detecta por el "Anfitrión: <correo>" guardado en las notas del lead.
+const CALENDLY_HOST_BLOCK=['mauricio.tinjaca','rosmary.rivas'];
+function calendlyHostKey(c){const m=String(c.notes||'').match(/anfitri[oó]n:\s*([^\s\n]+@[^\s\n]+)/i);return m?identKey(m[1]):'';}
+function filterBlockedCalendly(){
+  if(!state||!state.clients)return 0;
+  const block=CALENDLY_HOST_BLOCK.map(x=>identKey(x));
+  const before=state.clients.length;
+  state.clients=state.clients.filter(c=>{const h=calendlyHostKey(c);return !(h&&block.includes(h));});
+  return before-state.clients.length;   // SOLO oculta en la vista local; nunca borra en Supabase
 }
 function _autoDedupe_disabled(){
   if(!state||!state.clients)return 0;
