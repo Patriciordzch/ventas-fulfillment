@@ -2968,17 +2968,19 @@ function slackEventActive(event,c){
   return false;
 }
 // Marca como "ya visto" todo lo que YA está activo, SIN enviar (evita inundar Slack con el histórico al activar).
-function slackBaseline(){
+async function slackBaseline(){
   (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
     SLACK_EVENTS.forEach(e=>{ if(slackEventActive(e.k,c))c.slack[e.k]=1; });
     ecoMarkClient(c.id);
   });
-  slackCfg().baselineAt=nowISO(); saveSettings(); ecoSchedulePush();
+  slackCfg().baselineAt=nowISO(); saveSettings();
+  try{ await ecoFlush(); }catch(e){}   // PERSISTE los flags ANTES de permitir cualquier escaneo (evita avalancha)
 }
 // Revisa y envía lo pendiente (solo desde sesión admin; flag por cliente evita duplicados entre navegadores).
 function slackScan(){
   try{
     if(!slackEnabled()||!isAdmin())return;
+    if(!slackCfg().baselineAt)return;   // nunca enviar hasta que exista un baseline (histórico marcado como visto)
     const wh=slackCfg().webhooks||{}; let sent=0;
     (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
       SLACK_EVENTS.forEach(e=>{
@@ -3022,13 +3024,15 @@ function slackMaybeDigest(){
     if(Date.now()-last>=days*864e5-36e5)slackSendDigest(false);
   }catch(e){}
 }
-function saveSlackConfig(){
+async function saveSlackConfig(){
   const s=slackCfg(); const was=!!s.enabled;
   s.enabled=document.getElementById('slkEnabled').checked;
   s.webhooks={lead:cfgVal('slkLead'),propuesta:cfgVal('slkProp'),docs:cfgVal('slkDocs'),contrato:cfgVal('slkContrato'),digest:cfgVal('slkDigest')};
   s.digestFreq=document.getElementById('slkFreq').value;
   saveSettings();
-  if(s.enabled&&!was){ slackBaseline(); showToast('Slack activado · histórico marcado como visto, solo se avisará lo nuevo'); }
+  // Si se activa por primera vez (o aún no hay baseline), marcamos TODO lo actual como visto y lo
+  // GUARDAMOS antes de permitir escaneos, para que solo se avise lo nuevo (nunca el histórico).
+  if(s.enabled&&(!was||!s.baselineAt)){ await slackBaseline(); showToast('Slack activado · histórico marcado como visto, solo se avisará lo nuevo'); }
   else showToast('Configuración de Slack guardada');
   loadConfigs();
 }
