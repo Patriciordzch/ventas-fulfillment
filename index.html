@@ -127,6 +127,8 @@
   .field{display:flex;flex-direction:column;gap:5px}
   .field label{font-size:12px;color:var(--muted);font-weight:700}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .eco-pill{position:fixed;right:18px;bottom:18px;z-index:480;background:var(--navy,#003875);color:#fff;border:none;border-radius:24px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 10px 28px rgba(0,40,90,.28);display:flex;align-items:center;gap:6px}
+  .eco-pill:hover{filter:brightness(1.08)}
   .centro-pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
   .centro-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;user-select:none}
   .centro-chip input{accent-color:var(--navy);width:15px;height:15px;margin:0}
@@ -1116,6 +1118,7 @@ function drillSellerSet(sid,kind,mk){const cl=state.clients.filter(c=>c.sellerId
 }
 function drillReached(sid,stageId,label){const g=state.clients.filter(c=>c.sellerId===sid&&reached(c,stageId));drillClients(sellerName(sid)+' · '+label,g);}
 function drillFirmados(mk){const g=filterBySeller(state.clients).filter(c=>closeMonth(c)===mk);drillClients('Contratos firmados · '+monthName(mk),g,[{h:'Fecha firma',get:c=>c.closeDate||'—'},{h:'Venta nueva',get:c=>money(ventaBase(c))}]);}
+function drillVentaNueva(mk){const g=filterBySeller(state.clients).filter(c=>closeMonth(c)===mk&&ventaBase(c)>0).sort((a,b)=>ventaBase(b)-ventaBase(a));drillClients('Venta nueva · '+monthName(mk),g,[{h:'Vendedor',get:c=>sellerName(c.sellerId)},{h:'Fecha firma',get:c=>c.closeDate||'—'},{h:'Venta nueva',get:c=>money(ventaBase(c))}]);}
 function drillInvMes(mk){const g=filterBySeller(state.clients).filter(c=>{const ai=stageDate(c,'activo')||stageDate(c,'integracion');return ai&&ai.slice(0,7)===mk;});drillClients('Inventarios enviados · '+monthName(mk),g,[{h:'Fecha inventario',get:c=>{const ai=stageDate(c,'activo')||stageDate(c,'integracion');return ai?ai.slice(0,10):'—';}},{h:'Firmó',get:c=>cierreDate(c)||'—'}]);}
 function drillStale(){const now=Date.now();const g=filterBySeller(state.clients).filter(c=>!CLOSED_STAGES_SET.includes(c.stage)&&c.updatedAt&&(now-Date.parse(c.updatedAt))/864e5>=STALE_DAYS).sort((a,b)=>Date.parse(a.updatedAt)-Date.parse(b.updatedAt));drillClients('Leads estancados (+'+STALE_DAYS+' días sin moverse)',g,[{h:'Días sin mover',get:c=>Math.floor((now-Date.parse(c.updatedAt))/864e5)+' d'},{h:'Última modificación',get:c=>(c.updatedAt||'').slice(0,10)}]);}
 function drillRiskChurn(){const mk=curMonth();const g=filterBySeller(state.clients).filter(c=>isChurned(c));drillClients('Bajas — 2+ meses sin facturar',g,[{h:'Última factura',get:c=>{const lb=lastBillMonth(c);return lb?monthName(lb).slice(0,3)+" '"+lb.slice(2,4):'—';}},{h:'Meses sin facturar',get:c=>{const lb=lastBillMonth(c);return lb?monthsBetween(lb,mk):'—';}}]);}
@@ -1571,7 +1574,7 @@ function applyPermissions(){
   if(!admin&&['legal','usuarios','config'].includes(currentView))goView('dashboard');
 }
 
-function buildSellerSelectors(){const o='<option value="all">Todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('globalSeller').innerHTML=o;const bsel=document.getElementById('billSeller');if(bsel)bsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const byel=document.getElementById('billYear');if(byel){const cur=byel.value;const yrs=new Set([new Date().getFullYear()]);Object.values(state.billing||{}).forEach(mm=>Object.keys(mm).forEach(k=>yrs.add(+k.slice(0,4))));const arr=[...yrs].sort((a,b)=>b-a);byel.innerHTML=arr.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur&&arr.includes(+cur))byel.value=cur;}const psel=document.getElementById('pipeSeller');if(psel)psel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const csel=document.getElementById('cliSeller');if(csel)csel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const prsel=document.getElementById('projSeller');if(prsel){const cur=prsel.value;prsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)prsel.value=cur;}const cosel=document.getElementById('cobrosSeller');if(cosel){const cur=cosel.value;cosel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)cosel.value=cur;}const vpk=document.getElementById('vendPick');if(vpk){const cur=vpk.value;vpk.innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur&&state.sellers.find(s=>s.id===cur))vpk.value=cur;}document.getElementById('cmSeller').innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('cmStage').innerHTML=STAGES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');}
+function buildSellerSelectors(){const valid=v=>v&&(v==='all'||state.sellers.find(s=>s.id===v));const o='<option value="all">Todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');const gs=document.getElementById('globalSeller');const gsv=gs.value;gs.innerHTML=o;if(valid(gsv))gs.value=gsv;const bsel=document.getElementById('billSeller');if(bsel){const cur=bsel.value;bsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(valid(cur))bsel.value=cur;}const byel=document.getElementById('billYear');if(byel){const cur=byel.value;const yrs=new Set([new Date().getFullYear()]);Object.values(state.billing||{}).forEach(mm=>Object.keys(mm).forEach(k=>yrs.add(+k.slice(0,4))));const arr=[...yrs].sort((a,b)=>b-a);byel.innerHTML=arr.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur&&arr.includes(+cur))byel.value=cur;}const psel=document.getElementById('pipeSeller');if(psel){const cur=psel.value;psel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(valid(cur))psel.value=cur;}const csel=document.getElementById('cliSeller');if(csel){const cur=csel.value;csel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(valid(cur))csel.value=cur;}const prsel=document.getElementById('projSeller');if(prsel){const cur=prsel.value;prsel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)prsel.value=cur;}const cosel=document.getElementById('cobrosSeller');if(cosel){const cur=cosel.value;cosel.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur)cosel.value=cur;}const vpk=document.getElementById('vendPick');if(vpk){const cur=vpk.value;vpk.innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur&&state.sellers.find(s=>s.id===cur))vpk.value=cur;}document.getElementById('cmSeller').innerHTML=state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');document.getElementById('cmStage').innerHTML=STAGES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');}
 document.getElementById('globalSeller').addEventListener('change',renderAll);
 function activeSeller(){ if(!isAdmin()){ return currentUser&&currentUser.sellerId?currentUser.sellerId:'__self__'; } return document.getElementById('globalSeller').value;}
 function sellerName(id){const s=state.sellers.find(x=>x.id===id);return s?s.name:'—';}
@@ -1660,7 +1663,7 @@ function renderDashboard(){
   mkChart('chartVN',{data:{labels:lbl,datasets:[
     {type:'bar',label:'Venta nueva',data:vnSerie,backgroundColor:'#00ab10',borderRadius:6,maxBarThickness:40,yAxisID:'y',order:2},
     {type:'line',label:'Clientes',data:vnClientes,borderColor:'#003875',backgroundColor:'rgba(0,56,117,.10)',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:'#003875',yAxisID:'y1',order:1}
-  ]},options:{maintainAspectRatio:false,plugins:{legend:{display:true,labels:{font:{size:11},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='Clientes'?ctx.parsed.y+' cliente(s)':money(ctx.parsed.y)}}},scales:{y:{position:'left',beginAtZero:true,ticks:{callback:moneyTick,font:{size:11}},grid:{color:'#eef2f8'}},y1:{position:'right',beginAtZero:true,ticks:{precision:0,stepSize:1,font:{size:11}},grid:{display:false},title:{display:true,text:'clientes',font:{size:10}}},x:{ticks:{font:{size:11}},grid:{display:false}}}}});
+  ]},options:{maintainAspectRatio:false,onClick:(e,els)=>{if(els&&els.length)drillVentaNueva(dmonths[els[0].index]);},plugins:{legend:{display:true,labels:{font:{size:11},usePointStyle:true}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='Clientes'?ctx.parsed.y+' cliente(s)':money(ctx.parsed.y)+' · clic para ver clientes'}}},scales:{y:{position:'left',beginAtZero:true,ticks:{callback:moneyTick,font:{size:11}},grid:{color:'#eef2f8'}},y1:{position:'right',beginAtZero:true,ticks:{precision:0,stepSize:1,font:{size:11}},grid:{display:false},title:{display:true,text:'clientes',font:{size:10}}},x:{ticks:{font:{size:11}},grid:{display:false}}}}});
   const stg=STAGES.map(st=>({st,n:clients.filter(c=>c.stage===st.id).length})).filter(x=>x.n>0);
   mkChart('chartPipe',{type:'bar',data:{labels:stg.map(x=>x.st.name),datasets:[{data:stg.map(x=>x.n),backgroundColor:stg.map(x=>x.st.color),borderRadius:6,maxBarThickness:26}]},options:{indexAxis:'y',maintainAspectRatio:false,onClick:(e,els)=>{if(els&&els.length)drillStage(stg[els[0].index].st.id);},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.x+' clientes (clic para ver)'}}},scales:{x:{beginAtZero:true,ticks:{precision:0,font:{size:11}},grid:{color:'#eef2f8'}},y:{ticks:{font:{size:11}},grid:{display:false}}}}});
   // Gráfica 2 del dashboard: CONTRATOS FIRMADOS por mes (la de comisiones se movió a la pestaña Comisiones).
@@ -2247,14 +2250,24 @@ function ecoSignature(){
 async function ecoAutoRefresh(){
   if(!ecoOn()||_ecoBusy||_ecoDirtyC.size||_ecoDirtyP.size)return; // no pisar cambios que aún no suben
   if(document.querySelector('.modal-bg.open'))return;             // no refrescar con un modal abierto
-  if(document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName))return; // no interrumpir mientras se escribe/filtra
-  const ok=await ecoLoad();
+  const ok=await ecoLoad();                 // mantiene los datos al día en segundo plano
   if(!ok)return;
   const sig=ecoSignature();
-  if(sig===_ecoLastSig)return;             // nada cambió → no re-render (conserva filtros y posición)
-  _ecoLastSig=sig;
-  buildSellerSelectors();renderAll();
+  if(sig===_ecoLastSig)return;              // nada nuevo
+  // NUNCA redibujamos solos (no borramos filtros ni posición): solo avisamos con un botón.
+  showEcoUpdatePill();
+}
+// Aplica la actualización pendiente SOLO cuando el usuario lo pide (clic en el botón).
+function applyEcoUpdate(){
+  const el=document.getElementById('ecoUpdatePill'); if(el)el.style.display='none';
+  buildSellerSelectors(); renderAll();
   if(currentView==='usuarios')renderUsuarios();
+  try{_ecoLastSig=ecoSignature();}catch(e){}
+}
+function showEcoUpdatePill(){
+  let el=document.getElementById('ecoUpdatePill');
+  if(!el){el=document.createElement('button');el.id='ecoUpdatePill';el.className='eco-pill';el.innerHTML='🔄 Hay datos nuevos · Actualizar';el.onclick=applyEcoUpdate;document.body.appendChild(el);}
+  el.style.display='';
 }
 function startEcoPoll(){
   if(_ecoPollTimer)clearInterval(_ecoPollTimer);
