@@ -635,6 +635,8 @@
             <div class="field"><label>📊 Webhook · Resumen (digest)</label><input id="slkDigest" placeholder="https://hooks.slack.com/services/…"></div>
             <div class="field"><label>Frecuencia del resumen</label><select id="slkFreq"><option value="semanal">Semanal</option><option value="diario">Diario</option><option value="off">Desactivado</option></select></div>
           </div>
+          <div class="field"><label>📎 Función de documentos (ZIP + Aprobar en Slack) — opcional</label><input id="slkDocsFn" placeholder="https://&lt;proyecto&gt;.supabase.co/functions/v1/slack-docs?token=…"></div>
+          <div class="muted" style="font-size:11px;margin:-4px 0 2px">Si pones esta URL, el aviso de <b>documentos subidos</b> llega con el <b>ZIP adjunto</b> y botones <b>Aprobar/Rechazar</b> dentro de Slack (requiere desplegar la función <code>slack-docs</code>). Si la dejas vacía, ese evento usa el webhook normal de arriba.</div>
           <div style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">
             <button class="btn sm" onclick="saveSlackConfig()">Guardar</button>
             <button class="btn ghost sm" onclick="slackTest('lead')">Probar lead</button>
@@ -2925,7 +2927,7 @@ function loadConfigs(){
   document.getElementById('cfgCalcUrl').value=c.url||CALC_SUPABASE_DEFAULT;document.getElementById('cfgCalcKey').value=c.key||CALC_KEY_DEFAULT;document.getElementById('cfgCalcTable').value=c.table||'negotiations_with_seller';document.getElementById('cfgCalcEndpoint').value=c.endpoint||'';document.getElementById('cfgCalcLinkBase').value=c.linkBase||CALC_BASE_DEFAULT;
   const ce=document.getElementById('cfgCalcEmail'); if(ce)ce.value=c.email||'';
   const sk=state.slack||{}, wh=sk.webhooks||{}, $=id=>document.getElementById(id);
-  if($('slkEnabled')){$('slkEnabled').checked=!!sk.enabled;$('slkLead').value=wh.lead||'';$('slkProp').value=wh.propuesta||'';$('slkDocs').value=wh.docs||'';$('slkContrato').value=wh.contrato||'';$('slkDigest').value=wh.digest||'';$('slkFreq').value=sk.digestFreq||'semanal';}
+  if($('slkEnabled')){$('slkEnabled').checked=!!sk.enabled;$('slkLead').value=wh.lead||'';$('slkProp').value=wh.propuesta||'';$('slkDocs').value=wh.docs||'';$('slkContrato').value=wh.contrato||'';$('slkDigest').value=wh.digest||'';$('slkFreq').value=sk.digestFreq||'semanal';if($('slkDocsFn'))$('slkDocsFn').value=wh.docsfn||'';}
   updateApiStatus(); calcAuthStatus();
 }
 function saveApiConfig(){state.api={base:cfgVal('cfgApiBase'),endpoint:cfgVal('cfgApiEndpoint'),authType:cfgVal('cfgApiAuthType'),token:cfgVal('cfgApiToken'),keyName:cfgVal('cfgApiKeyName'),connected:!!(cfgVal('cfgApiEndpoint')&&cfgVal('cfgApiToken'))};save();updateApiStatus();showToast('Conexión de facturación guardada');}
@@ -2986,12 +2988,21 @@ function slackScan(){
       SLACK_EVENTS.forEach(e=>{
         if(slackEventActive(e.k,c)&&!c.slack[e.k]){
           c.slack[e.k]=1; ecoMarkClient(c.id);
-          if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;}
+          if(e.k==='docs'&&wh.docsfn){ slackNotifyDocs(c); sent++; }   // ZIP adjunto + botones Aprobar/Rechazar (función)
+          else if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;}
         }
       });
     });
     if(sent){save();}
   }catch(e){}
+}
+// Envía el evento de documentos a la función slack-docs (que arma el ZIP y publica con botones Aprobar/Rechazar).
+function slackNotifyDocs(c){
+  const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
+  const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
+    docs:(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type})),
+    legal_status:(c.legal&&c.legal.status)||'pendiente'};
+  try{fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){}
 }
 function slackTest(event){ const url=(slackCfg().webhooks||{})[event];
   if(!url){showToast('Pega primero el webhook de ese evento y Guarda');return;}
@@ -3027,7 +3038,7 @@ function slackMaybeDigest(){
 async function saveSlackConfig(){
   const s=slackCfg(); const was=!!s.enabled;
   s.enabled=document.getElementById('slkEnabled').checked;
-  s.webhooks={lead:cfgVal('slkLead'),propuesta:cfgVal('slkProp'),docs:cfgVal('slkDocs'),contrato:cfgVal('slkContrato'),digest:cfgVal('slkDigest')};
+  s.webhooks={lead:cfgVal('slkLead'),propuesta:cfgVal('slkProp'),docs:cfgVal('slkDocs'),contrato:cfgVal('slkContrato'),digest:cfgVal('slkDigest'),docsfn:cfgVal('slkDocsFn')};
   s.digestFreq=document.getElementById('slkFreq').value;
   saveSettings();
   // Si se activa por primera vez (o aún no hay baseline), marcamos TODO lo actual como visto y lo
