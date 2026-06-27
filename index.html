@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     /* Tokens exactos de la Calculadora Fulfillment */
@@ -744,6 +746,7 @@
           <button type="button" class="btn sm" onclick="generateNegLink()">⚡ Generar link de negociación</button>
           <button type="button" class="btn ghost sm" onclick="copyCalcLinkFromModal()">🔗 Copiar</button>
           <button type="button" class="btn ghost sm" onclick="openCalcLinkFromModal()">↗ Abrir</button>
+          <button type="button" class="btn ghost sm" onclick="if(editingClientId)downloadProposal(editingClientId);else showToast('Guarda el cliente primero')">📄 Propuesta (PDF)</button>
         </div>
         <input id="cmCalcLink" readonly style="width:100%;margin-top:9px;font-size:11.5px;font-family:ui-monospace,monospace;background:#fff;color:var(--navy)" placeholder="Escribe el nombre del cliente y pulsa “Generar link de negociación”">
         <div class="muted" style="font-size:11.5px;margin-top:8px">El nombre y el <b>slug</b> de la negociación se toman del campo <b>Nombre del cliente/empresa</b> (obligatorio). El link abre la cotización completa con el botón <b>Aceptar propuesta</b>; en modo vendedor puedes ajustar supuestos. Conforme el cliente acepta y sube documentos, el estatus se refleja aquí al <b>Importar de Calculadora</b>.</div>
@@ -1475,6 +1478,7 @@ function renderLegal(){
         <button class="btn green sm" onclick="legalSetStatus('${c.id}','aprobado')">✅ Dar visto bueno</button>
         <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','rechazado')">✕ Rechazar</button>
         <button class="btn ghost sm" onclick="legalSetStatus('${c.id}','pendiente')">↺ Marcar pendiente</button>
+        <button class="btn ghost sm" onclick="downloadProposal('${c.id}')">📄 Propuesta (PDF)</button>
         <button class="btn ghost sm" onclick="downloadDocsZip('${c.id}')">⬇ Descargar carpeta (ZIP)</button>
       </div>
     </div></details>`;
@@ -2480,14 +2484,97 @@ function toggleTask(cid,tid){const c=state.clients.find(x=>x.id===cid);if(!c)ret
 function delTask(cid,tid){const c=state.clients.find(x=>x.id===cid);if(!c)return;c.tasks=(c.tasks||[]).filter(x=>x.id!==tid);touch(c);save();renderModalTasks(c);renderDashboard();}
 function addActivity(cid){const c=state.clients.find(x=>x.id===cid);if(!c)return;const txt=document.getElementById('naText').value.trim();if(!txt){showToast('Escribe la interacción');return;}const type=document.getElementById('naType').value;(c.activities=c.activities||[]).push({id:uid(),type,text:txt,at:nowISO()});touch(c);save();renderModalActivity(c);showToast('Interacción registrada');}
 function delActivity(cid,aid){const c=state.clients.find(x=>x.id===cid);if(!c)return;c.activities=(c.activities||[]).filter(x=>x.id!==aid);touch(c);save();renderModalActivity(c);}
+/* ============================================================
+   PROPUESTA COMERCIAL (PDF) — tabulador de tarifas negociadas
+   Se genera en la herramienta, igual al que descarga la calculadora.
+   ============================================================ */
+function proposalFileName(c){return 'Propuesta_'+String(c.name||'cliente').replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g,'').trim().replace(/\s+/g,'_')+'.pdf';}
+function proposalPDFDoc(c){
+  if(!(window.jspdf&&window.jspdf.jsPDF))return null;
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'pt',format:'letter'});
+  const navy=[0,56,117],green=[22,163,74],gray=[120,134,156],dark=[30,41,59];
+  const W=doc.internal.pageSize.getWidth();
+  const slug=c.calcSlug||slugify(c.name);
+  const fecha=new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+  const acepta=stageDate(c,'aceptada')?new Date(stageDate(c,'aceptada')).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}):fecha;
+  const seller=sellerName(c.sellerId)||'—';
+  const header=()=>{ doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(...navy);doc.text('envia.com',40,46);
+    doc.setTextColor(...green);doc.setFontSize(9);doc.text('fulfillment',41,58);
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...dark);doc.text(fecha,W-40,42,{align:'right'});
+    doc.setTextColor(...gray);doc.text('Ref. '+slug,W-40,55,{align:'right'});
+    doc.setDrawColor(...green);doc.setLineWidth(2);doc.line(40,68,W-40,68);doc.setLineWidth(.5); };
+  const footer=()=>{const p=doc.internal.getNumberOfPages();const h=doc.internal.pageSize.getHeight();
+    doc.setDrawColor(225,232,240);doc.line(40,h-42,W-40,h-42);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...gray);
+    doc.text('Envia Fulfillment',40,h-28);doc.text('Propuesta para '+(c.name||''),W/2,h-28,{align:'center'});
+    doc.text('Página '+doc.internal.getCurrentPageInfo().pageNumber+' de '+p,W-40,h-28,{align:'right'}); };
+  let n=0;
+  function sec(num,title,desc,head,body){
+    let y=doc.lastAutoTable?doc.lastAutoTable.finalY+26:150;
+    if(y>doc.internal.pageSize.getHeight()-130){doc.addPage();y=92;}
+    doc.setFillColor(...navy);doc.circle(48,y-4,8,'F');doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(255,255,255);doc.text(String(num),48,y-1.5,{align:'center'});
+    doc.setFontSize(12);doc.setTextColor(...navy);doc.text(title,64,y);
+    doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(...gray);doc.text(desc,64,y+13,{maxWidth:W-104});
+    doc.autoTable({startY:y+22,head:[head],body,theme:'grid',
+      styles:{font:'helvetica',fontSize:9,cellPadding:6,textColor:dark,lineColor:[228,234,242]},
+      headStyles:{fillColor:navy,textColor:255,fontStyle:'bold',fontSize:9.5},
+      columnStyles:head.length===2?{1:{halign:'right',fontStyle:'bold'}}:{},
+      margin:{left:40,right:40},didDrawPage:()=>{header();footer();}});
+  }
+  // Portada (primera página)
+  header();footer();
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...gray);doc.text('PROPUESTA COMERCIAL',40,100);
+  doc.setFont('helvetica','bold');doc.setFontSize(26);doc.setTextColor(...navy);doc.text(String(c.name||''),40,128);
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(...dark);doc.text('Tabulador de tarifas negociadas — Anexo al contrato de servicios.',40,146);
+  doc.setFontSize(9);doc.setTextColor(...gray);doc.text('VENDEDOR RESPONSABLE',40,176);doc.text('ACEPTACIÓN',40,191);
+  doc.setTextColor(...dark);doc.text(seller,200,176);doc.text(acepta,200,191);
+  doc.setDrawColor(228,234,242);doc.line(40,205,W-40,205);
+  // forzar que la 1ra sección empiece debajo de la portada
+  doc.lastAutoTable={finalY:205};
+  sec(++n,'Recepción de mercancía','Tarifa por ítem recibido en almacén, según tamaño del producto.',
+    ['Tamaño','Tarifa por ítem'],[['Chico (hasta 3 kg)','$3.00'],['Mediano (hasta 10 kg)','$4.50'],['Grande (hasta 25 kg)','$15.00'],['Extra Grande (hasta 60 kg)','$45.00']]);
+  sec(++n,'Almacenamiento','Precio por m³ ocupado al mes, escalonado según volumen de órdenes procesadas.',
+    ['Rango de órdenes / mes','Tarifa por m³'],[['0 – 500 órdenes','$500.00'],['501 – 2,000 órdenes','$375.00'],['2,001 – 5,000 órdenes','$250.00'],['5,001+ órdenes','$200.00']]);
+  sec(++n,'Procesamiento de órdenes (Pick & Pack)','La tarifa base por orden incluye 1 ítem. Cada ítem adicional se cobra según el total de ítems en la orden (descuento por volumen).',
+    ['Tamaño','Base por orden','1 – 10','11 – 50','51 – 300','301+'],[
+      ['Chico (hasta 3 kg)','$17.00','$5.00','$3.00','$2.00','$1.50'],
+      ['Mediano (hasta 10 kg)','$25.00','$6.00','$5.00','$3.00','$2.50'],
+      ['Grande (hasta 25 kg)','$45.00','$10.00','$8.00','$5.50','$4.00'],
+      ['Extra Grande (hasta 60 kg)','$67.00','$18.00','$14.00','$9.00','$7.00']]);
+  sec(++n,'Descarga de mercancía','Cobro único por entrada, según tipo de transporte que llega al almacén.',
+    ['Tipo de entrada','Tarifa'],[['Paquetería (mensajería)','$0.00'],['Pallet','$80.00'],["Contenedor 20'",'$4,500.00'],["Contenedor 40'",'$5,500.00'],["Caja 53'",'$6,000.00']]);
+  sec(++n,'Envíos','Tarifa por guía generada. Las tarifas mostradas ya incluyen IVA.',
+    ['Cobertura','Tarifa'],[['Local (zona metropolitana)','$58.00'],['Nacional','$86.00']]);
+  sec(++n,'Adicionales','Servicios opcionales sobre la orden o el ítem.',
+    ['Servicio','Tarifa'],[['Etiquetado','$4.00 / ítem'],['Tarjeta / regalo','$4.00 / ítem']]);
+  sec(++n,'Facturación mínima mensual','Si el consumo del mes es menor a este monto, se factura el mínimo.',
+    ['Concepto','Monto'],[['Mínimo mensual garantizado','$4,999.00']]);
+  // re-estampar el pie con el total de páginas correcto
+  const total=doc.internal.getNumberOfPages(),h=doc.internal.pageSize.getHeight();
+  for(let i=1;i<=total;i++){doc.setPage(i);doc.setFillColor(255,255,255);doc.rect(W-170,h-38,130,14,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...gray);doc.text('Página '+i+' de '+total,W-40,h-28,{align:'right'});}
+  return doc;
+}
+function downloadProposal(id){const c=state.clients.find(x=>x.id===id);if(!c)return;const d=proposalPDFDoc(c);if(!d){showToast('No se pudo generar el PDF (recarga la página)');return;}d.save(proposalFileName(c));}
+// Sube la propuesta al storage para que entre al ZIP de Slack; devuelve el storage_path.
+async function uploadProposalToStorage(c){
+  const sb=getSb();const d=c&&proposalPDFDoc(c);if(!sb||!d)return null;
+  try{const slug=c.calcSlug||slugify(c.name);const path=slug+'/propuesta_comercial.pdf';
+    const blob=d.output('blob');
+    await sb.storage.from(CALC_DOCS_BUCKET).upload(path,blob,{contentType:'application/pdf',upsert:true});
+    return path;
+  }catch(e){console.warn('uploadProposal',e&&e.message);return null;}
+}
 async function downloadDocsZip(id){
   const c=state.clients.find(x=>x.id===id); if(!c)return;
-  const docs=c.calcDocs||[]; if(!docs.length){showToast('Sin documentos');return;}
+  const docs=c.calcDocs||[];
   const sb=getSb(); if(!sb){showToast('Conecta Supabase para descargar los archivos');return;}
   if(!window.JSZip){showToast('Librería ZIP no cargada (revisa tu conexión)');return;}
   showToast('Preparando ZIP de documentos…');
   try{
     const zip=new JSZip(); let n=0;
+    // La propuesta comercial siempre va incluida en el ZIP
+    try{const pd=proposalPDFDoc(c);if(pd){zip.file('00_'+proposalFileName(c),pd.output('blob'));n++;}}catch(e){}
     for(const d of docs){
       if(!d.storage_path)continue;
       const {data,error}=await sb.storage.from(CALC_DOCS_BUCKET).createSignedUrl(d.storage_path,600);
@@ -3106,12 +3193,14 @@ function slackScan(){
 // Solo marca como enviado (c.slack.docs=1) si la función responde OK; si falla (403, función caída, etc.)
 // NO quema la marca, así que se reintenta solo en el siguiente sondeo hasta que funcione.
 let _slackDocsBusy={};
-function slackNotifyDocs(c){
+async function slackNotifyDocs(c){
   const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
   if(_slackDocsBusy[c.id])return; _slackDocsBusy[c.id]=1;
+  const docs=(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type}));
+  // sube la propuesta comercial al storage y la incluye en el ZIP de Slack
+  try{const pp=await uploadProposalToStorage(c); if(pp)docs.unshift({doc_id:'propuesta_comercial',filename:proposalFileName(c),storage_path:pp,mime:'application/pdf'});}catch(e){}
   const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
-    docs:(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type})),
-    legal_rep:c.legalRep||null,
+    docs,legal_rep:c.legalRep||null,
     legal_status:(c.legal&&c.legal.status)||'pendiente'};
   fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
     .then(r=>r.ok)
