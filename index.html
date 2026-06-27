@@ -3202,11 +3202,9 @@ async function slackNotifyDocs(c){
   const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
     docs,legal_rep:c.legalRep||null,
     legal_status:(c.legal&&c.legal.status)||'pendiente'};
-  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(r=>r.ok)
-    .then(ok=>{ if(ok){ c.slack=c.slack||{}; c.slack.docs=1; ecoMarkClient(c.id); save(); } })
-    .catch(()=>{})
-    .finally(()=>{ delete _slackDocsBusy[c.id]; });
+  // no-cors: evita el preflight CORS que el gateway rechaza con 405. Marcamos como enviado al disparar.
+  try{ fetch(url,{method:'POST',mode:'no-cors',body:JSON.stringify(payload)}); c.slack=c.slack||{}; c.slack.docs=1; ecoMarkClient(c.id); save(); }catch(e){}
+  delete _slackDocsBusy[c.id];
 }
 function slackTest(event){ const url=(slackCfg().webhooks||{})[event];
   if(!url){showToast('Pega primero el webhook de ese evento y Guarda');return;}
