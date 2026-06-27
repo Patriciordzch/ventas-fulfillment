@@ -2224,9 +2224,12 @@ async function generateNegLink(){
     if(error){ showToast('❌ No se pudo crear: '+error.message); updateModalCalcLink(); return; }
     const {data:check}=await sb.from('negotiations').select('slug').eq('slug',_modalSlug).maybeSingle();
     updateModalCalcLink();
-    // Al crear el link, avanza la etapa a "Calculadora enviada" (solo si está antes; al Guardar queda registrada).
+    // Al crear el link, avanza la etapa a "Calculadora enviada" (solo si está antes).
     if(check){const stEl=document.getElementById('cmStage'); if(stEl&&stageIdx(stEl.value)<stageIdx('calc'))stEl.value='calc';}
-    showToast(check?('✅ Negociación creada · etapa → Calculadora enviada (Guarda para registrar) · '+_modalSlug):'⚠ Se envió pero no se confirmó; revisa permisos');
+    // Guarda automáticamente la negociación en el pipeline (sin cerrar el modal, para que el link siga visible).
+    // Se hace flush inmediato a Supabase para que sobreviva a un refresh sin esperar el debounce.
+    if(check){try{ const _id=persistClientFromModal(); if(_id){ecoMarkClient(_id); await ecoFlush();} renderAll(); }catch(e){console.warn('autosave neg',e&&e.message);}}
+    showToast(check?('✅ Negociación creada y guardada en el pipeline · etapa → Calculadora enviada · '+_modalSlug):'⚠ Se envió pero no se confirmó; revisa permisos');
   }catch(e){ updateModalCalcLink(); showToast('❌ Error de conexión: '+e.message); }
 }
 async function calcLogin(){
@@ -2680,14 +2683,23 @@ function setOpDates(c,n){
 function toggleLostField(){const w=document.getElementById('cmLostWrap');if(w)w.style.display=(document.getElementById('cmStage').value===LOST_STAGE)?'':'none';}
 function toggleNextContact(){const w=document.getElementById('cmNextWrap');if(w)w.style.display=(document.getElementById('cmLeadStatus').value==='futuro')?'':'none';}
 function readLostReason(){const sel=document.getElementById('cmLostReason'),oth=document.getElementById('cmLostReasonOther');if(!sel)return'';const o=(oth&&oth.value.trim())||'';if(o)return o;return sel.value&&sel.value!=='Otro'?sel.value:'';}
-function saveClient(){
-  const name=document.getElementById('cmName').value.trim();if(!name){showToast('Falta el nombre');return;}
+// Guarda/actualiza el cliente del modal SIN cerrar el modal. Devuelve el id, o null si falta el nombre.
+function persistClientFromModal(){
+  const name=document.getElementById('cmName').value.trim();if(!name){showToast('Falta el nombre');return null;}
   const docs={};document.querySelectorAll('#cmDocs input').forEach(cb=>docs[cb.dataset.doc]=cb.checked);
   const sellerId=isAdmin()?document.getElementById('cmSeller').value:currentSellerId();
   const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,nextContact:document.getElementById('cmNextContact').value||'',centros:readCentroPicker(),lostReason:readLostReason(),shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
   if(data.stage===LOST_STAGE)data.lostAt=nowISO(); else data.lostReason=data.lostReason; // mantiene la razón aunque cambie de etapa
-  if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);}else{state.clients.push({id:uid(),createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});}
-  save();slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
+  let id;
+  if(editingClientId){const c0=state.clients.find(c=>c.id===editingClientId);const ns=data.stage;delete data.stage;Object.assign(c0,data);changeStage(c0,ns);touch(c0);id=c0.id;}
+  else{id=uid();state.clients.push({id,createdAt:nowISO(),updatedAt:nowISO(),history:[{stage:data.stage,at:nowISO()}],...data});editingClientId=id;}
+  ecoMarkClient(id); // IMPORTANTE: marca el cliente (nuevo o editado) para que SÍ se suba a Supabase
+  save();
+  return id;
+}
+function saveClient(){
+  if(!persistClientFromModal())return;
+  slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
 async function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!(await uiConfirm('Se eliminará por completo (aquí y en la calculadora), junto con su facturación.',{title:'¿Eliminar '+(c0?'"'+c0.name+'"':'cliente')+'?',danger:true,okText:'Eliminar'})))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
 // Lista de "borrados" (tombstone) compartida: se guarda dentro de la config (eco_settings) para que
