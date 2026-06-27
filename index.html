@@ -1831,7 +1831,10 @@ function readCentroPicker(){return [...document.querySelectorAll('#cmCentros inp
 function centroFilterMatch(c,selId){const el=document.getElementById(selId);const v=el?el.value:'all';if(v==='all')return true;const arr=clientCentros(c);if(v==='__none__')return arr.length===0;return arr.includes(v);}
 function renderBoard(){
   const psl=document.getElementById('pipeSeller')?document.getElementById('pipeSeller').value:'all';
-  const all=isAdmin()?(psl==='all'?state.clients:state.clients.filter(c=>c.sellerId===psl)):filterBySeller(state.clients);
+  const gsl=(typeof activeSeller==='function')?activeSeller():'all';   // filtro "Vendedor" del encabezado
+  // El pipeline respeta su propio dropdown; si está en "todos", usa el filtro global del encabezado.
+  const eff=(psl&&psl!=='all')?psl:((gsl&&gsl!=='all'&&gsl!=='__self__')?gsl:'all');
+  const all=isAdmin()?(eff==='all'?state.clients:state.clients.filter(c=>c.sellerId===eff)):filterBySeller(state.clients);
   const v=pipeSel();
   const closeISO=c=>c.closeDate?c.closeDate+'T12:00:00':null;
   const modN=all.filter(c=>inPipeWindow(c.updatedAt)).length;
