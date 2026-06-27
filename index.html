@@ -1332,7 +1332,7 @@ async function autoSyncCalc(){
       let isNew=false;
       if(!c){ c={id:uid(),name:n.client||n.slug,sellerId:sellerForNeg(n),contact:'',email:'',phone:'',service:'Fulfillment',shipments:0,closeDate:'',startMonth:'',notes:'Importado de Calculadora',docs:{},calcParams:{},calcSlug:n.slug}; state.clients.push(c); isNew=true; }
       const ps=c.stage,pd=(c.calcDocs||[]).length;
-      applyCalcStatus(c,n.status); c.calcSlug=n.slug; c.calcNegId=n.id; c.calcDocs=docsByNeg[n.id]||[]; if(n.legal_rep&&(n.legal_rep.name||n.legal_rep.rfc||n.legal_rep.email||n.legal_rep.phone))c.legalRep=n.legal_rep; if(n.prices&&Object.keys(n.prices).length)c.calcPrices=n.prices; if(n.client_inputs)c.calcParams=n.client_inputs; if(n.amount_accepted!=null)c.calcAmount=+n.amount_accepted; {const _s=sellerForNeg(n);if(_s)c.sellerId=_s;} applyCalcEstimate(c,n); setOpDates(c,n);
+      applyCalcStatus(c,n.status); c.calcSlug=n.slug; c.calcNegId=n.id; c.calcDocs=docsByNeg[n.id]||[]; if(n.legal_rep&&(n.legal_rep.name||n.legal_rep.rfc||n.legal_rep.email||n.legal_rep.phone))c.legalRep=n.legal_rep; c.calcPrices=(n.prices&&Object.keys(n.prices).length)?n.prices:null; if(n.client_inputs)c.calcParams=n.client_inputs; if(n.amount_accepted!=null)c.calcAmount=+n.amount_accepted; {const _s=sellerForNeg(n);if(_s)c.sellerId=_s;} applyCalcEstimate(c,n); setOpDates(c,n);
       if(isNew||c.stage!==ps||c.calcDocs.length!==pd){changed++;touch(c);}
     });
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
@@ -2501,7 +2501,7 @@ function prepLogoPNG(){return new Promise(res=>{ if(_logoPNG){res(true);return;}
 try{prepLogoPNG();}catch(e){}
 // Tarifas por defecto (cuando la negociación no trae 'prices'); coinciden con el tabulador estándar de la calculadora.
 const DEFAULT_PRICES={
-  reception:{Small:3,Medium:4.5,Large:15,XL:45},
+  reception:{Small:3,Medium:5,Large:15,XL:45},
   storage:{"0-500":500,"501-2000":375,"2001-5000":250,"5000+":200},
   pickPack:{base:{Small:17,Medium:25,Large:45,XL:67},extra:{Small:{r1:5,r2:3,r3:2,r4:1.5},Medium:{r1:6,r2:5,r3:3,r4:2.5},Large:{r1:10,r2:8,r3:5.5,r4:4},XL:{r1:18,r2:14,r3:9,r4:7}}},
   unloading:{Paqueteria:0,Pallet:80,Cont20:4500,Cont40:5500,Caja53:6000},
