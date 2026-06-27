@@ -746,7 +746,7 @@
           <button type="button" class="btn sm" onclick="generateNegLink()">⚡ Generar link de negociación</button>
           <button type="button" class="btn ghost sm" onclick="copyCalcLinkFromModal()">🔗 Copiar</button>
           <button type="button" class="btn ghost sm" onclick="openCalcLinkFromModal()">↗ Abrir</button>
-          <button type="button" class="btn ghost sm" onclick="if(editingClientId)downloadProposal(editingClientId);else showToast('Guarda el cliente primero')">📄 Propuesta (PDF)</button>
+          <button type="button" class="btn ghost sm" onclick="downloadProposalFromModal()">📄 Propuesta (PDF)</button>
         </div>
         <input id="cmCalcLink" readonly style="width:100%;margin-top:9px;font-size:11.5px;font-family:ui-monospace,monospace;background:#fff;color:var(--navy)" placeholder="Escribe el nombre del cliente y pulsa “Generar link de negociación”">
         <div class="muted" style="font-size:11.5px;margin-top:8px">El nombre y el <b>slug</b> de la negociación se toman del campo <b>Nombre del cliente/empresa</b> (obligatorio). El link abre la cotización completa con el botón <b>Aceptar propuesta</b>; en modo vendedor puedes ajustar supuestos. Conforme el cliente acepta y sube documentos, el estatus se refleja aquí al <b>Importar de Calculadora</b>.</div>
@@ -2607,6 +2607,20 @@ function proposalPDFDoc(c){
   for(let i=1;i<=total;i++){doc.setPage(i);doc.setFillColor(255,255,255);doc.rect(W-170,h-38,130,14,'F');
     doc.setFont(FONT,'normal');doc.setFontSize(8);doc.setTextColor(...gray);doc.text('Página '+i+' de '+total,W-40,h-28,{align:'right'});}
   return doc;
+}
+// Descarga la propuesta desde el modal de negociación, esté o no guardado el cliente.
+async function downloadProposalFromModal(){
+  // Si ya es un cliente guardado, usa sus tarifas reales.
+  if(editingClientId){return downloadProposal(editingClientId);}
+  const name=(document.getElementById('cmName').value||'').trim();
+  if(!name){showToast('Pon el nombre del cliente/empresa para generar la propuesta');document.getElementById('cmName').focus();return;}
+  const sidEl=document.getElementById('cmSeller'); const sid=sidEl?sidEl.value:'';
+  const tempC={name, calcSlug:(_modalSlug||slugify(name)), sellerId:sid, calcPrices:null, history:[]};
+  showToast('Generando propuesta…');
+  try{await loadBasePrices();}catch(e){}try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}
+  const d=proposalPDFDoc(tempC);
+  if(!d){showToast('No se pudo generar el PDF (recarga la página)');return;}
+  d.save(proposalFileName(tempC));
 }
 async function downloadProposal(id){const c=state.clients.find(x=>x.id===id);if(!c)return;showToast('Generando propuesta…');try{await loadBasePrices();}catch(e){}try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}const d=proposalPDFDoc(c);if(!d){showToast('No se pudo generar el PDF (recarga la página)');return;}d.save(proposalFileName(c));}
 // Sube la propuesta al storage para que entre al ZIP de Slack; devuelve el storage_path.
