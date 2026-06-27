@@ -2509,6 +2509,22 @@ const DEFAULT_PRICES={
   extras:{etiquetado:4,tarjeta:4},
   minimumBilling:4999
 };
+// ===== Tarifario base EN VIVO desde la calculadora (Supabase app_settings · key=base_prices) =====
+// Fuente única de verdad: cuando el owner edita el "Tarifario base" en la calculadora,
+// se actualiza esa fila y aquí se lee automáticamente. DEFAULT_PRICES es solo el respaldo offline.
+let _basePrices=null;
+try{const _bz=localStorage.getItem('enviaBasePrices');if(_bz)_basePrices=JSON.parse(_bz);}catch(e){}
+function basePrices(){return (_basePrices&&typeof _basePrices==='object')?_basePrices:DEFAULT_PRICES;}
+async function loadBasePrices(){
+  const url=(window.state&&state.calc&&state.calc.url)||CALC_SUPABASE_DEFAULT;
+  const key=(window.state&&state.calc&&state.calc.key)||CALC_KEY_DEFAULT;
+  try{
+    const r=await fetch(url+'/rest/v1/app_settings?key=eq.base_prices&select=value',{headers:{apikey:key,Authorization:'Bearer '+key}});
+    if(r.ok){const j=await r.json(); if(Array.isArray(j)&&j[0]&&j[0].value){_basePrices=j[0].value;try{localStorage.setItem('enviaBasePrices',JSON.stringify(j[0].value));}catch(e){}return _basePrices;}}
+  }catch(e){console.warn('loadBasePrices',e&&e.message);}
+  return _basePrices;
+}
+try{loadBasePrices();}catch(e){}
 function money2(v){return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 // Carga (1 sola vez) la fuente Roboto para poder renderizar el símbolo ≤ igual que la calculadora.
 let _pdfFont=null,_pdfFontTried=false;
@@ -2529,13 +2545,14 @@ function proposalPDFDoc(c){
   const FONT='helvetica',leq='hasta ';
   // tarifas reales de la negociación con fallback a defaults
   const pr=c.calcPrices&&Object.keys(c.calcPrices).length?c.calcPrices:{};
-  const P={reception:Object.assign({},DEFAULT_PRICES.reception,pr.reception||{}),
-    storage:Object.assign({},DEFAULT_PRICES.storage,pr.storage||{}),
-    pickPack:{base:Object.assign({},DEFAULT_PRICES.pickPack.base,(pr.pickPack&&pr.pickPack.base)||{}),extra:Object.assign({},DEFAULT_PRICES.pickPack.extra,(pr.pickPack&&pr.pickPack.extra)||{})},
-    unloading:Object.assign({},DEFAULT_PRICES.unloading,pr.unloading||{}),
-    shipping:Object.assign({},DEFAULT_PRICES.shipping,pr.shipping||{}),
-    extras:Object.assign({},DEFAULT_PRICES.extras,pr.extras||{}),
-    minimumBilling:(pr.minimumBilling!=null?pr.minimumBilling:DEFAULT_PRICES.minimumBilling)};
+  const B=basePrices(); // tarifario base en vivo (Supabase) con respaldo a DEFAULT_PRICES
+  const P={reception:Object.assign({},B.reception,pr.reception||{}),
+    storage:Object.assign({},B.storage,pr.storage||{}),
+    pickPack:{base:Object.assign({},B.pickPack.base,(pr.pickPack&&pr.pickPack.base)||{}),extra:Object.assign({},B.pickPack.extra,(pr.pickPack&&pr.pickPack.extra)||{})},
+    unloading:Object.assign({},B.unloading,pr.unloading||{}),
+    shipping:Object.assign({},B.shipping,pr.shipping||{}),
+    extras:Object.assign({},B.extras,pr.extras||{}),
+    minimumBilling:(pr.minimumBilling!=null?pr.minimumBilling:B.minimumBilling)};
   const SZ=[['Small','Chico ('+leq+'3 kg)'],['Medium','Mediano ('+leq+'10 kg)'],['Large','Grande ('+leq+'25 kg)'],['XL','Extra Grande ('+leq+'60 kg)']];
   const slug=c.calcSlug||slugify(c.name);
   const fecha=new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
@@ -2591,10 +2608,10 @@ function proposalPDFDoc(c){
     doc.setFont(FONT,'normal');doc.setFontSize(8);doc.setTextColor(...gray);doc.text('Página '+i+' de '+total,W-40,h-28,{align:'right'});}
   return doc;
 }
-async function downloadProposal(id){const c=state.clients.find(x=>x.id===id);if(!c)return;showToast('Generando propuesta…');try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}const d=proposalPDFDoc(c);if(!d){showToast('No se pudo generar el PDF (recarga la página)');return;}d.save(proposalFileName(c));}
+async function downloadProposal(id){const c=state.clients.find(x=>x.id===id);if(!c)return;showToast('Generando propuesta…');try{await loadBasePrices();}catch(e){}try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}const d=proposalPDFDoc(c);if(!d){showToast('No se pudo generar el PDF (recarga la página)');return;}d.save(proposalFileName(c));}
 // Sube la propuesta al storage para que entre al ZIP de Slack; devuelve el storage_path.
 async function uploadProposalToStorage(c){
-  const sb=getSb();if(!sb||!c)return null;try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}const d=proposalPDFDoc(c);if(!d)return null;
+  const sb=getSb();if(!sb||!c)return null;try{await loadBasePrices();}catch(e){}try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}const d=proposalPDFDoc(c);if(!d)return null;
   try{const slug=c.calcSlug||slugify(c.name);const path=slug+'/propuesta_comercial.pdf';
     const blob=d.output('blob');
     await sb.storage.from(CALC_DOCS_BUCKET).upload(path,blob,{contentType:'application/pdf',upsert:true});
@@ -2607,7 +2624,7 @@ async function downloadDocsZip(id){
   const sb=getSb(); if(!sb){showToast('Conecta Supabase para descargar los archivos');return;}
   if(!window.JSZip){showToast('Librería ZIP no cargada (revisa tu conexión)');return;}
   showToast('Preparando ZIP de documentos…');
-  try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}
+  try{await loadBasePrices();}catch(e){}try{await prepLogoPNG();}catch(e){}try{await ensurePdfFont();}catch(e){}
   try{
     const zip=new JSZip(); let n=0;
     // La propuesta comercial siempre va incluida en el ZIP
