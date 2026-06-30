@@ -2701,7 +2701,7 @@ function saveClient(){
   if(!persistClientFromModal())return;
   slackScan();closeClientModal();renderAll();showToast('Cliente guardado');
 }
-async function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!(await uiConfirm('Se eliminará por completo (aquí y en la calculadora), junto con su facturación.',{title:'¿Eliminar '+(c0?'"'+c0.name+'"':'cliente')+'?',danger:true,okText:'Eliminar'})))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);if(slug)deleteCalcNegotiation(slug,docs);saveSettings();save();closeClientModal();renderAll();showToast('Cliente eliminado');}
+async function deleteClient(){if(!editingClientId)return;const c0=state.clients.find(c=>c.id===editingClientId);if(!(await uiConfirm('Se eliminará por completo (aquí y en la calculadora), junto con su facturación.',{title:'¿Eliminar '+(c0?'"'+c0.name+'"':'cliente')+'?',danger:true,okText:'Eliminar'})))return;const _id=editingClientId;if(c0)tombstoneClient(c0);const slug=c0&&c0.calcSlug,docs=c0?(c0.calcDocs||[]).slice():[];if(c0)ecoBackupDeleted(c0,state.billing[_id]||{});state.clients=state.clients.filter(c=>c.id!==_id);delete state.billing[_id];ecoDeleteClient(_id);saveSettings();save();closeClientModal();renderAll();if(slug){const res=await deleteCalcNegotiation(slug,docs);if(res&&!res.ok){showToast('⚠ Se borró aquí, pero NO en la calculadora — '+(res.reason||''));return;}}showToast('Cliente eliminado (aquí y en la calculadora)');}
 // Lista de "borrados" (tombstone) compartida: se guarda dentro de la config (eco_settings) para que
 // las negociaciones eliminadas NO reaparezcan al re-importar de la calculadora ni al recargar.
 function deletedSet(){ state.commission=state.commission||{}; if(!Array.isArray(state.commission.__deleted))state.commission.__deleted=[]; return state.commission.__deleted; }
@@ -2710,13 +2710,22 @@ function filterDeleted(){ const d=deletedSet(); if(!d.length||!state.clients)ret
 // Borra la negociación TAMBIÉN en la calculadora: archivos del storage, filas de documents y la
 // negociación (por slug). Va en su propio try para no romper si RLS bloquea algo.
 async function deleteCalcNegotiation(slug,docs){
-  const sb=getSb(); if(!sb||!slug)return;
+  const sb=getSb(); if(!sb||!slug)return {ok:false,reason:'sin conexión'};
+  try{ await ensureCalcAuth(); }catch(e){}   // hace falta sesión de vendedor para que RLS permita borrar
   try{
     try{ const paths=(docs||[]).map(d=>d.storage_path).filter(Boolean); if(paths.length)await sb.storage.from(CALC_DOCS_BUCKET).remove(paths); }catch(e){}
     let negId=null; try{ const r=await sb.from('negotiations').select('id').eq('slug',slug).limit(1); negId=r.data&&r.data[0]&&r.data[0].id; }catch(e){}
     if(negId){ try{ await sb.from('documents').delete().eq('negotiation_id',negId); }catch(e){} }
-    await sb.from('negotiations').delete().eq('slug',slug);
-  }catch(e){ console.warn('deleteCalcNegotiation',e); }
+    // Borrar la negociación y VERIFICAR que realmente se eliminó (RLS puede dejar 0 filas sin error).
+    const del=await sb.from('negotiations').delete().eq('slug',slug).select('id');
+    if(del.error)return {ok:false,reason:del.error.message};
+    const removed=(del.data||[]).length;
+    if(removed===0){
+      const chk=await sb.from('negotiations').select('id').eq('slug',slug).limit(1);
+      if(chk.data&&chk.data.length)return {ok:false,reason:'permisos (RLS): la calculadora no permite borrar esta negociación con tu usuario'};
+    }
+    return {ok:true,removed};
+  }catch(e){ console.warn('deleteCalcNegotiation',e); return {ok:false,reason:e.message}; }
 }
 // Elimina por completo una negociación desde su tarjeta (con confirmación). Borra en la app, en Supabase
 // compartido y en la CALCULADORA; y la deja en la lista de borrados para que no vuelva a importarse.
@@ -2726,8 +2735,9 @@ async function deleteClientById(id,ev){ if(ev){ev.stopPropagation();} const c=st
   const slug=c.calcSlug, docs=(c.calcDocs||[]).slice();
   ecoBackupDeleted(c, state.billing[id]||{});   // respaldo en Supabase (papelera) antes de borrar
   state.clients=state.clients.filter(x=>x.id!==id); delete state.billing[id]; ecoDeleteClient(id);
-  if(slug)deleteCalcNegotiation(slug,docs);
-  saveSettings(); save(); renderAll(); showToast('Negociación eliminada: '+c.name);
+  saveSettings(); save(); renderAll();
+  if(slug){const res=await deleteCalcNegotiation(slug,docs); if(res&&!res.ok){showToast('⚠ Se borró aquí, pero NO en la calculadora — '+(res.reason||'')); return;}}
+  showToast('Negociación eliminada (aquí y en la calculadora): '+c.name);
 }
 function updBill(cid,mk,f,v){if(!state.billing[cid])state.billing[cid]={};if(!state.billing[cid][mk])state.billing[cid][mk]={amount:0,orders:0,shipments:0};state.billing[cid][mk][f]=+v||0;touch(state.clients.find(x=>x.id===cid));save();renderBilling();renderDashboard();}
 
