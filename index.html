@@ -2210,13 +2210,20 @@ function calendlyLeadsToDemo(){
 }
 // Anfitriones de Calendly de OTROS PAÍSES: sus citas no deben aparecer aquí. Se ocultan en la vista
 // (no se borran de Supabase). Detecta por el "Anfitrión: <correo>" guardado en las notas del lead.
-const CALENDLY_HOST_BLOCK=['mauricio.tinjaca','rosmary.rivas'];
+// LISTA BLANCA: SOLO se muestran leads de Calendly de estos anfitriones. Cualquier otro (fulfillment.es,
+// otros países, etc.) se IGNORA — se oculta en la vista, NUNCA se borra de Supabase.
+const CALENDLY_HOST_ALLOW=['jazmin.hernandez@envia.com','alejandra.santoy@envia.com'];
 function calendlyHostKey(c){const m=String(c.notes||'').match(/anfitri[oó]n:\s*([^\s\n]+@[^\s\n]+)/i);return m?identKey(m[1]):'';}
 function filterBlockedCalendly(){
   if(!state||!state.clients)return 0;
-  const block=CALENDLY_HOST_BLOCK.map(x=>identKey(x));
+  const allow=CALENDLY_HOST_ALLOW.map(x=>identKey(x));
   const before=state.clients.length;
-  state.clients=state.clients.filter(c=>{const h=calendlyHostKey(c);return !(h&&block.includes(h));});
+  state.clients=state.clients.filter(c=>{
+    if((c.source||'')!=='Calendly')return true;   // no es lead de Calendly → no se toca
+    const h=calendlyHostKey(c);
+    if(!h)return true;                             // Calendly sin anfitrión detectable → se conserva
+    return allow.includes(h);                      // Calendly → solo anfitriones permitidos
+  });
   return before-state.clients.length;   // SOLO oculta en la vista local; nunca borra en Supabase
 }
 function _autoDedupe_disabled(){
