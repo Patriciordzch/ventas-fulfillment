@@ -2022,7 +2022,7 @@ async function ecoLoad(){
     filterBlockedCalendly(); // oculta leads de anfitriones de otros países (mauricio.tinjaca, rosmary.rivas)
     filterDeleted();         // omite las negociaciones que se eliminaron por completo
     save();
-    slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
+    await slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
     slackMaybeDigest();  // envía el resumen si toca (diario/semanal)
     return true;
   }catch(e){showToast('Error al cargar de Supabase: '+e.message);return false;}
@@ -3263,21 +3263,29 @@ async function slackBaseline(){
   try{ await ecoFlush(); }catch(e){}   // PERSISTE los flags ANTES de permitir cualquier escaneo (evita avalancha)
 }
 // Revisa y envía lo pendiente (solo desde sesión admin; flag por cliente evita duplicados entre navegadores).
-function slackScan(){
+let _slackScanBusy=false;
+async function slackScan(){
+  if(_slackScanBusy)return; _slackScanBusy=true;
   try{
     if(!slackEnabled()||!isAdmin())return;
     if(!slackCfg().baselineAt)return;   // nunca enviar hasta que exista un baseline (histórico marcado como visto)
-    const wh=slackCfg().webhooks||{}; let sent=0;
-    (state.clients||[]).forEach(c=>{ c.slack=c.slack||{};
-      SLACK_EVENTS.forEach(e=>{
+    const wh=slackCfg().webhooks||{}; const sb=getSb(); let changed=false;
+    for(const c of (state.clients||[])){ c.slack=c.slack||{};
+      for(const e of SLACK_EVENTS){
         if(slackEventActive(e.k,c)&&!c.slack[e.k]){
-          if(e.k==='docs'&&wh.docsfn){ slackNotifyDocs(c); }            // marca SOLO si la función confirma OK (auto-reintenta)
-          else { c.slack[e.k]=1; ecoMarkClient(c.id); if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));sent++;} }
+          if(e.k==='docs'&&wh.docsfn){ await slackNotifyDocs(c); }            // marca SOLO si la función confirma OK (auto-reintenta)
+          else {
+            c.slack[e.k]=1; ecoMarkClient(c.id);
+            if(wh[e.k]){slackPost(wh[e.k],slackText(e.k,c));}
+            // PERSISTE el flag de INMEDIATO en Supabase: evita que el refresh (cada 30s) lo borre y reenvíe (flood).
+            if(sb){try{await sb.from('eco_clients').upsert(clientToRow(c));}catch(err){console.warn('slack flag persist',err&&err.message);}}
+            changed=true;
+          }
         }
-      });
-    });
-    if(sent){save();}
-  }catch(e){}
+      }
+    }
+    if(changed)save();
+  }catch(e){}finally{_slackScanBusy=false;}
 }
 // Envía el evento de documentos a la función slack-docs (arma el ZIP y publica con botones).
 // Solo marca como enviado (c.slack.docs=1) si la función responde OK; si falla (403, función caída, etc.)
@@ -3286,15 +3294,25 @@ let _slackDocsBusy={};
 async function slackNotifyDocs(c){
   const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
   if(_slackDocsBusy[c.id])return; _slackDocsBusy[c.id]=1;
-  const docs=(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type}));
-  // sube la propuesta comercial al storage y la incluye en el ZIP de Slack
-  try{const pp=await uploadProposalToStorage(c); if(pp)docs.unshift({doc_id:'propuesta_comercial',filename:proposalFileName(c),storage_path:pp,mime:'application/pdf'});}catch(e){}
-  const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
-    docs,legal_rep:c.legalRep||null,
-    legal_status:(c.legal&&c.legal.status)||'pendiente'};
-  // no-cors: evita el preflight CORS que el gateway rechaza con 405. Marcamos como enviado al disparar.
-  try{ fetch(url,{method:'POST',mode:'no-cors',body:JSON.stringify(payload)}); c.slack=c.slack||{}; c.slack.docs=1; ecoMarkClient(c.id); save(); }catch(e){}
-  delete _slackDocsBusy[c.id];
+  try{
+    const docs=(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type}));
+    // sube la propuesta comercial al storage y la incluye en el ZIP de Slack (siempre va, aunque no haya otros docs)
+    try{const pp=await uploadProposalToStorage(c); if(pp)docs.unshift({doc_id:'propuesta_comercial',filename:proposalFileName(c),storage_path:pp,mime:'application/pdf'});}catch(e){}
+    const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
+      docs,legal_rep:c.legalRep||null,legal_status:(c.legal&&c.legal.status)||'pendiente'};
+    let ok=false;
+    // 1) Intento con fetch REAL para CONFIRMAR que la función respondió {ok:true} (la función tiene CORS + OPTIONS).
+    try{
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(r.ok){ const j=await r.json().catch(()=>null); ok=!j||j.ok!==false; }
+    }catch(e){
+      // 2) Si CORS/preflight lo bloquea, reintento con no-cors (sin poder confirmar; se asume enviado).
+      try{ await fetch(url,{method:'POST',mode:'no-cors',body:JSON.stringify(payload)}); ok=true; }catch(e2){ ok=false; }
+    }
+    // Solo marca como enviado si se confirmó (o el fallback no-cors disparó). Si falló, NO marca → reintenta al siguiente sondeo.
+    if(ok){ c.slack=c.slack||{}; c.slack.docs=1; ecoMarkClient(c.id); const sb=getSb(); if(sb){try{await sb.from('eco_clients').upsert(clientToRow(c));}catch(e){}} save(); }
+  }catch(e){console.warn('slackNotifyDocs',e&&e.message);}
+  finally{ delete _slackDocsBusy[c.id]; }
 }
 function slackTest(event){ const url=(slackCfg().webhooks||{})[event];
   if(!url){showToast('Pega primero el webhook de ese evento y Guarda');return;}
