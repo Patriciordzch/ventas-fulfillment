@@ -3309,6 +3309,15 @@ async function slackScan(){
     if(!slackEnabled()||!isAdmin())return;
     if(!slackCfg().baselineAt)return;   // nunca enviar hasta que exista un baseline (histórico marcado como visto)
     const wh=slackCfg().webhooks||{}; const sb=getSb(); let changed=false;
+    // 1) Trae los flags de Slack MÁS RECIENTES desde Supabase antes de decidir qué enviar.
+    //    Así, si OTRA pestaña/dispositivo ya avisó un evento, esta sesión lo ve y NO lo reenvía.
+    if(sb){ try{
+      const fr=await sb.from('eco_clients').select('id,docs');
+      if(!fr.error&&Array.isArray(fr.data)){
+        const map={}; fr.data.forEach(r=>{ if(r.docs&&r.docs.__slackN)map[r.id]=r.docs.__slackN; });
+        (state.clients||[]).forEach(c=>{ const sN=map[c.id]; if(sN)c.slack=Object.assign({},c.slack||{},sN); });
+      }
+    }catch(e){} }
     for(const c of (state.clients||[])){ c.slack=c.slack||{};
       for(const e of SLACK_EVENTS){
         if(slackEventActive(e.k,c)&&!c.slack[e.k]){
