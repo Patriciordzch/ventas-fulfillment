@@ -1346,7 +1346,7 @@ function renderSeguimiento(){
   const ss=document.getElementById('segSeller');
   if(ss){const cur=ss.value;ss.innerHTML='<option value="all">Vendedor: todos</option>'+state.sellers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');if(cur&&(cur==='all'||state.sellers.find(s=>s.id===cur)))ss.value=cur;ss.style.display=isAdmin()?'':'none';}
   let base=filterBySeller(state.clients);
-  if(isAdmin()&&ss&&ss.value&&ss.value!=='all')base=state.clients.filter(c=>c.sellerId===ss.value);
+  if(isAdmin()&&ss&&ss.value&&ss.value!=='all')base=state.clients.filter(c=>sellerSelMatch(c,ss.value));
   const perdidas=base.filter(c=>c.stage===LOST_STAGE).sort((a,b)=>(b.lostAt||b.updatedAt||'').localeCompare(a.lostAt||a.updatedAt||''));
   const futuro=base.filter(c=>c.leadStatus==='futuro'&&c.stage!==LOST_STAGE).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   let html=`<div class="panel"><h3 style="margin-top:0">❌ Negociaciones perdidas <span class="muted" style="font-weight:500;font-size:13px">(${perdidas.length})</span></h3>`;
@@ -1670,7 +1670,44 @@ function sellerForNeg(n){
   if(snm&&!s.nameLocked)s.name=snm; // la calculadora manda el nombre, salvo que se haya editado a mano
   return s.id;
 }
-function filterBySeller(a){const s=activeSeller();if(s==='all')return a;if(s==='__self__'){const n=((currentUser&&currentUser.name)||'').toLowerCase();return a.filter(c=>(sellerName(c.sellerId)||'').toLowerCase()===n||(c.seller_name||'').toLowerCase()===n);}return a.filter(c=>c.sellerId===s);}
+// === BLINDAJE POR IDENTIDAD DE VENDEDOR ===
+// Un vendedor puede tener más de un registro (duplicados por importación). Estas funciones agrupan
+// por IDENTIDAD (mismo usuario de la calculadora o mismo nombre) para que los filtros NUNCA escondan
+// clientes por un id que no empata exactamente.
+function sellerGroupIds(sid){
+  const ids=new Set(); if(sid)ids.add(sid);
+  const base=(state.sellers||[]).find(s=>s.id===sid); if(!base)return ids;
+  const key=identKey(base.name), calc=base.calcSellerId;
+  (state.sellers||[]).forEach(s=>{ if((key&&identKey(s.name)===key)||(calc&&s.calcSellerId===calc))ids.add(s.id); });
+  return ids;
+}
+// Ids de vendedor que representan a la persona logueada (por usuario de la calculadora o por nombre/correo).
+function myOwnSellerIds(){
+  const ids=new Set(); if(!currentUser)return ids;
+  const key=identKey(currentUser.name||'')||identKey(currentUser.email||''), uid2=currentUser.id;
+  (state.sellers||[]).forEach(s=>{ if((uid2&&s.calcSellerId===uid2)||(key&&identKey(s.name)===key))ids.add(s.id); });
+  return ids;
+}
+// ¿Este cliente es del vendedor logueado? (por id agrupado, por nombre del vendedor o por seller_name de la calculadora)
+function clientIsMine(c){
+  const mine=myOwnSellerIds(); if(c.sellerId&&mine.has(c.sellerId))return true;
+  const key=identKey((currentUser&&currentUser.name)||'')||identKey((currentUser&&currentUser.email)||'');
+  if(!key)return false;
+  return identKey(sellerName(c.sellerId))===key||identKey(c.seller_name||'')===key;
+}
+// Devuelve el id de vendedor CANÓNICO (el ligado a la cuenta de la calculadora) para esa identidad.
+function canonicalSellerId(sid){
+  const g=[...sellerGroupIds(sid)].map(id=>(state.sellers||[]).find(s=>s.id===id)).filter(Boolean);
+  if(!g.length)return sid; const linked=g.find(s=>s.calcSellerId); return (linked||g[0]).id;
+}
+function filterBySeller(a){
+  if(!isAdmin())return a.filter(clientIsMine);   // vendedor: TODO lo suyo, sin importar el id exacto/duplicados
+  const s=activeSeller(); if(!s||s==='all'||s==='__self__')return a;
+  const ids=sellerGroupIds(s); const nm=identKey(((state.sellers||[]).find(x=>x.id===s)||{}).name);
+  return a.filter(c=>ids.has(c.sellerId)||(nm&&(identKey(sellerName(c.sellerId))===nm||identKey(c.seller_name||'')===nm)));
+}
+// Igual que arriba pero para un id de vendedor ya elegido (dropdowns de pipeline/clientes en admin).
+function sellerSelMatch(c,sid){ if(!sid||sid==='all')return true; const ids=sellerGroupIds(sid); const nm=identKey(((state.sellers||[]).find(x=>x.id===sid)||{}).name); return ids.has(c.sellerId)||(nm&&(identKey(sellerName(c.sellerId))===nm||identKey(c.seller_name||'')===nm)); }
 
 /* DASHBOARD */
 let _charts={};
@@ -1839,7 +1876,7 @@ function renderBoard(){
   const gsl=(typeof activeSeller==='function')?activeSeller():'all';   // filtro "Vendedor" del encabezado
   // El pipeline respeta su propio dropdown; si está en "todos", usa el filtro global del encabezado.
   const eff=(psl&&psl!=='all')?psl:((gsl&&gsl!=='all'&&gsl!=='__self__')?gsl:'all');
-  const all=isAdmin()?(eff==='all'?state.clients:state.clients.filter(c=>c.sellerId===eff)):filterBySeller(state.clients);
+  const all=isAdmin()?(eff==='all'?state.clients:state.clients.filter(c=>sellerSelMatch(c,eff))):filterBySeller(state.clients);
   const v=pipeSel();
   const closeISO=c=>c.closeDate?c.closeDate+'T12:00:00':null;
   const modN=all.filter(c=>inPipeWindow(c.updatedAt)).length;
@@ -1870,7 +1907,7 @@ function renderClientes(){
   const sel=cliSel(), cf=document.getElementById('cliFrom')?.value, ct=document.getElementById('cliTo')?.value;
   const stF=document.getElementById('cliStage')?document.getElementById('cliStage').value:'all';
   const csl=document.getElementById('cliSeller')?document.getElementById('cliSeller').value:'all';
-  const base=isAdmin()?(csl==='all'?state.clients:state.clients.filter(c=>c.sellerId===csl)):filterBySeller(state.clients);
+  const base=isAdmin()?(csl==='all'?state.clients:state.clients.filter(c=>sellerSelMatch(c,csl))):filterBySeller(state.clients);
   const cdISO=c=>{const d=cierreDate(c);return d?d+'T12:00:00':null;};
   let clients=base.filter(c=>CLOSED.includes(c.stage)&&(stF==='all'||c.stage===stF)&&centroFilterMatch(c,'cliCentro')&&c.name.toLowerCase().includes(q)&&inRange(cdISO(c),sel,cf,ct));
   const facturanN=clients.filter(c=>firstBillMonth(c)).length, pendN=clients.length-facturanN;
@@ -2688,7 +2725,7 @@ function readLostReason(){const sel=document.getElementById('cmLostReason'),oth=
 function persistClientFromModal(){
   const name=document.getElementById('cmName').value.trim();if(!name){showToast('Falta el nombre');return null;}
   const docs={};document.querySelectorAll('#cmDocs input').forEach(cb=>docs[cb.dataset.doc]=cb.checked);
-  const sellerId=isAdmin()?document.getElementById('cmSeller').value:currentSellerId();
+  const sellerId=canonicalSellerId(isAdmin()?document.getElementById('cmSeller').value:currentSellerId());
   const data={name,sellerId,contact:document.getElementById('cmContact').value,stage:document.getElementById('cmStage').value,email:document.getElementById('cmEmail').value,phone:document.getElementById('cmPhone').value,closeDate:document.getElementById('cmCloseDate').value,startMonth:document.getElementById('cmStartMonth').value,service:document.getElementById('cmService').value,source:document.getElementById('cmSource').value,leadStatus:document.getElementById('cmLeadStatus').value,nextContact:document.getElementById('cmNextContact').value||'',centros:readCentroPicker(),lostReason:readLostReason(),shipments:+document.getElementById('cmShipments').value||0,notes:document.getElementById('cmNotes').value,docs,calcParams:currentModalCalcParams(),calcSlug:_modalSlug||undefined};
   if(data.stage===LOST_STAGE)data.lostAt=nowISO(); else data.lostReason=data.lostReason; // mantiene la razón aunque cambie de etapa
   let id;
@@ -2754,7 +2791,7 @@ function renderBilling(){
   const bs=isAdmin()?(document.getElementById('billSeller')?document.getElementById('billSeller').value:'all'):currentSellerId();
   const months=Array.from({length:12},(_,i)=>year+'-'+String(i+1).padStart(2,'0'));
   const mesLbl=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  let cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&centroFilterMatch(c,'billCentro')&&(months.some(mk=>state.billing[c.id]?.[mk])||(opMonth1(c)&&(+opMonth1(c).slice(0,4))<=year&&CLOSED_STAGES_SET.includes(c.stage))));
+  let cls=state.clients.filter(c=>(bs==='all'||sellerSelMatch(c,bs))&&centroFilterMatch(c,'billCentro')&&(months.some(mk=>state.billing[c.id]?.[mk])||(opMonth1(c)&&(+opMonth1(c).slice(0,4))<=year&&CLOSED_STAGES_SET.includes(c.stage))));
   cls.sort((a,b)=>{const A=opMonth1(a)||'0',B=opMonth1(b)||'0';return A<B?1:-1;});
   // ---- Totales por mes y por cliente ----
   const colTot=new Array(12).fill(0); let grand=0;
@@ -2826,7 +2863,7 @@ function billScopeSeller(){return isAdmin()?(document.getElementById('billSeller
 // Descarga la plantilla CSV del año seleccionado: una fila por cliente, columnas Ene..Dic (prellenadas con lo ya capturado)
 function downloadBillingTemplate(){
   const year=billYearVal(); const bs=billScopeSeller();
-  const cls=state.clients.filter(c=>(bs==='all'||c.sellerId===bs)&&(CLOSED_STAGES_SET.includes(c.stage)||Object.keys(state.billing[c.id]||{}).length)).sort((a,b)=>a.name.localeCompare(b.name));
+  const cls=state.clients.filter(c=>(bs==='all'||sellerSelMatch(c,bs))&&(CLOSED_STAGES_SET.includes(c.stage)||Object.keys(state.billing[c.id]||{}).length)).sort((a,b)=>a.name.localeCompare(b.name));
   let csv='Cliente,'+BILL_MESES.join(',')+'\n';
   cls.forEach(c=>{const row=['"'+(c.name||'').replace(/"/g,'""')+'"'];for(let i=0;i<12;i++){const mk=year+'-'+String(i+1).padStart(2,'0');const a=state.billing[c.id]&&state.billing[c.id][mk]&&state.billing[c.id][mk].amount;row.push(a||'');}csv+=row.join(',')+'\n';});
   downloadFile('facturacion_'+year+'.csv',csv);
@@ -2862,8 +2899,8 @@ function importBillingCSV(e){const f=e.target.files[0];if(!f)return;const fname=
 function renderProyeccion(){
   const el=document.getElementById('projContent');if(!el)return;
   let cls=state.clients.filter(c=>PRE_CALC_STAGES.includes(c.stage));
-  if(!isAdmin()){const sid=ensureViewerSeller();if(sid)cls=cls.filter(c=>c.sellerId===sid);}
-  else{const sel=document.getElementById('projSeller');const bs=sel?sel.value:'all';if(bs!=='all')cls=cls.filter(c=>c.sellerId===bs);}
+  if(!isAdmin()){cls=cls.filter(clientIsMine);}
+  else{const sel=document.getElementById('projSeller');const bs=sel?sel.value:'all';if(bs!=='all')cls=cls.filter(c=>sellerSelMatch(c,bs));}
   cls=cls.filter(c=>centroFilterMatch(c,'projCentro'));
   // Solo entran a los tiers los que ya tienen monto proyectado. Los demás van a "Por estimar".
   const conMonto=cls.filter(c=>projMonthly(c)>0);
@@ -3119,7 +3156,7 @@ function renderCobros(){
   // El vendedor solo ve sus propios clientes.
   if(!isAdmin())bs=ensureViewerSeller()||bs;
   const stf=document.getElementById('cobrosStatus')?document.getElementById('cobrosStatus').value:'all';
-  const data=state.clients.filter(c=>firstBillMonth(c)===mk&&(bs==='all'||c.sellerId===bs)).map(c=>{
+  const data=state.clients.filter(c=>firstBillMonth(c)===mk&&(bs==='all'||sellerSelMatch(c,bs))).map(c=>{
     const m1=mk,m2=addMonthKey(m1,1),reached2=m2<=curMonth();
     const b1=clientBilling(c.id,m1),b2=clientBilling(c.id,m2);
     const comp1=!!(b1&&b1.comprobante),comp2=reached2?!!(b2&&b2.comprobante):null;
