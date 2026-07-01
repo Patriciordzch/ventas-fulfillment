@@ -747,6 +747,7 @@
           <button type="button" class="btn ghost sm" onclick="copyCalcLinkFromModal()">🔗 Copiar</button>
           <button type="button" class="btn ghost sm" onclick="openCalcLinkFromModal()">↗ Abrir</button>
           <button type="button" class="btn ghost sm" onclick="downloadProposalFromModal()">📄 Propuesta (PDF)</button>
+          <button type="button" class="btn ghost sm" onclick="resendDocsToSlack()">🔄 Reenviar docs a Slack</button>
         </div>
         <input id="cmCalcLink" readonly style="width:100%;margin-top:9px;font-size:11.5px;font-family:ui-monospace,monospace;background:#fff;color:var(--navy)" placeholder="Escribe el nombre del cliente y pulsa “Generar link de negociación”">
         <div class="muted" style="font-size:11.5px;margin-top:8px">El nombre y el <b>slug</b> de la negociación se toman del campo <b>Nombre del cliente/empresa</b> (obligatorio). El link abre la cotización completa con el botón <b>Aceptar propuesta</b>; en modo vendedor puedes ajustar supuestos. Conforme el cliente acepta y sube documentos, el estatus se refleja aquí al <b>Importar de Calculadora</b>.</div>
@@ -3290,6 +3291,18 @@ async function slackScan(){
 // Envía el evento de documentos a la función slack-docs (arma el ZIP y publica con botones).
 // Solo marca como enviado (c.slack.docs=1) si la función responde OK; si falla (403, función caída, etc.)
 // NO quema la marca, así que se reintenta solo en el siguiente sondeo hasta que funcione.
+// Fuerza el reenvío del ZIP de documentos a Slack para el cliente abierto (resetea el flag y vuelve a mandar).
+async function resendDocsToSlack(){
+  if(!editingClientId){showToast('Guarda el cliente primero');return;}
+  const c=state.clients.find(x=>x.id===editingClientId); if(!c)return;
+  if(!((slackCfg().webhooks||{}).docsfn)){showToast('Falta la URL de la función de documentos (Configuración → Slack)');return;}
+  const nDocs=(c.calcDocs||[]).length;
+  showToast(nDocs?('Enviando '+nDocs+' documento(s) + propuesta a Slack…'):'Enviando propuesta a Slack (sin documentos importados)…');
+  c.slack=c.slack||{}; c.slack.docs=0;                 // resetea el flag para forzar el reenvío
+  delete _slackDocsBusy[c.id];
+  await slackNotifyDocs(c);
+  showToast(c.slack&&c.slack.docs? '✅ Enviado a Slack':'⚠ No se pudo enviar. Revisa la función/URL en Configuración → Slack.');
+}
 let _slackDocsBusy={};
 async function slackNotifyDocs(c){
   const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
