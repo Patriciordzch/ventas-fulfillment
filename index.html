@@ -1337,6 +1337,7 @@ async function autoSyncCalc(){
       if(isNew||c.stage!==ps||c.calcDocs.length!==pd){changed++;touch(c);}
     });
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
+    try{ await slackScan(); }catch(e){}   // escanea con calcDocs YA frescos (para el aviso de documentos)
   }catch(e){}
 }
 function renderAll(){renderDashboard();renderBoard();renderProyeccion();renderClientes();renderBilling();renderComisiones();renderCobros();renderConfig();try{renderVendedores();}catch(e){}try{renderLeads();}catch(e){}try{renderLegal();}catch(e){}try{renderSeguimiento();}catch(e){}}
@@ -3286,7 +3287,7 @@ function slackEventActive(event,c){
   switch(event){
     case 'lead':      return (c.source||'')==='Calendly';
     case 'propuesta': return stageIdx(c.stage)>=stageIdx('aceptada')||!!(c.docs&&c.docs['Propuesta aceptada']);
-    case 'docs':      return !!(c.calcDocs&&c.calcDocs.length); // subida real de documentos
+    case 'docs':      return (!!(c.calcDocs&&c.calcDocs.length)||stageIdx(c.stage)>=stageIdx('docs'))&&c.stage!==LOST_STAGE; // docs cargados o etapa de documentos+ (calcDocs es efímero)
     case 'contrato':  return CLOSED_STAGES_SET.includes(c.stage);
   }
   return false;
@@ -3345,7 +3346,15 @@ async function slackNotifyDocs(c){
   const url=(slackCfg().webhooks||{}).docsfn; if(!url)return;
   if(_slackDocsBusy[c.id])return; _slackDocsBusy[c.id]=1;
   try{
-    const docs=(c.calcDocs||[]).map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type}));
+    // Trae los documentos FRESCOS de la calculadora (c.calcDocs es efímero y puede estar vacío tras un refresh).
+    let raw=(c.calcDocs||[]);
+    try{
+      const sb=getSb(); const sbr=(typeof getSbRead==='function'&&getSbRead())||sb;
+      let negId=c.calcNegId;
+      if(!negId&&c.calcSlug&&sbr){const nr=await sbr.from('negotiations').select('id').eq('slug',c.calcSlug).maybeSingle(); negId=nr.data&&nr.data.id;}
+      if(negId&&sbr){const dr=await sbr.from('documents').select('*').eq('negotiation_id',negId); if(!dr.error&&Array.isArray(dr.data)){raw=dr.data; c.calcNegId=negId; c.calcDocs=dr.data;}}
+    }catch(e){}
+    const docs=raw.map(d=>({doc_id:d.doc_id,filename:d.filename,storage_path:d.storage_path,mime:d.mime_type}));
     // sube la propuesta comercial al storage y la incluye en el ZIP de Slack (siempre va, aunque no haya otros docs)
     try{const pp=await uploadProposalToStorage(c); if(pp)docs.unshift({doc_id:'propuesta_comercial',filename:proposalFileName(c),storage_path:pp,mime:'application/pdf'});}catch(e){}
     const payload={client_id:c.id,name:c.name,seller:sellerName(c.sellerId)||'sin asignar',stage:c.stage,
