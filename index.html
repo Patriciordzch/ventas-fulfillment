@@ -293,6 +293,30 @@
     .login-inner{padding:28px 22px 26px}
     .login-card .lmark{width:200px}
   }
+  /* ===== KAE / Cuentas ===== */
+  .kae-subtabs{display:inline-flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:11px}
+  .kae-tab{background:transparent;border:none;padding:7px 13px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);transition:.12s;white-space:nowrap}
+  .kae-tab:hover{color:var(--navy)}
+  .kae-tab.active{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(15,42,80,.12)}
+  .kae-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+  .kae-kpi{background:#fff;border:1px solid var(--border);border-radius:13px;padding:14px 16px}
+  .kae-kpi .k{font-size:12px;color:var(--muted);font-weight:600}
+  .kae-kpi .v{font-size:26px;font-weight:800;color:var(--navy);line-height:1.1;margin-top:3px}
+  .kae-kpi .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .kae-kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start}
+  .kae-col{background:var(--surface-2);border-radius:13px;padding:10px;min-height:120px}
+  .kae-col.drop-hover{outline:2px dashed var(--navy);outline-offset:-4px}
+  .kae-col h4{margin:2px 4px 10px;font-size:13px;display:flex;align-items:center;gap:6px}
+  .kae-card{background:#fff;border:1px solid var(--border);border-left-width:4px;border-radius:10px;padding:10px 11px;margin-bottom:8px;cursor:grab;font-size:12.5px}
+  .kae-card:hover{box-shadow:0 2px 8px rgba(15,42,80,.1)}
+  .kae-card .cl{font-weight:700;color:var(--navy)}
+  .kae-card .mt{color:var(--muted);font-size:11px;margin-top:3px;display:flex;flex-wrap:wrap;gap:6px}
+  .pri-alta{color:#c0392b;border-color:#e6b0aa!important}
+  .pri-media{color:#b9770e}
+  .pri-baja{color:#64748b}
+  .kae-chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid}
+  .sem{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:5px}
+  .kae-filterbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -332,6 +356,7 @@
     <button data-view="clientes">Clientes</button>
     <button data-view="facturacion">Facturación</button>
     <button data-view="legal">Legal</button>
+    <button data-view="kae">KAE</button>
     <div class="navgroup"><button type="button" class="navgroup-btn">Equipo <span class="car">▾</span></button><div class="navmenu">
       <button data-view="vendedores">Vendedores</button>
       <button data-view="comisiones">Comisiones</button>
@@ -413,6 +438,14 @@
     </div>
     <p class="muted" style="font-size:12.5px;margin:-8px 0 12px">Clientes que subieron su documentación en el onboarding. Toca un cliente para abrir sus archivos, revisarlos y dar tu <b>visto bueno</b>.</p>
     <div id="legalContent"></div>
+  </section>
+  <section class="view" id="view-kae">
+    <div class="toolbar">
+      <h2 class="section" style="margin:0">KAE <span class="muted" style="font-weight:500;font-size:14px">· incidencias y pendientes de Fulfillment</span></h2>
+      <div class="spacer"></div>
+      <select id="kaePick" onchange="renderKae()" title="Filtrar por KAE"></select>
+    </div>
+    <div id="kaeContent"></div>
   </section>
   <section class="view" id="view-pipeline">
     <div class="toolbar">
@@ -779,6 +812,33 @@
   <div class="modal" style="max-width:720px">
     <header><h3 id="drillTitle"></h3><button class="x" onclick="closeDrill()">&times;</button></header>
     <div class="body" id="drillBody"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="incModal">
+  <div class="modal" style="max-width:560px">
+    <header><h3 id="incTitle">Nueva incidencia</h3><button class="x" onclick="closeIncModal()">&times;</button></header>
+    <div class="body">
+      <div class="field"><label>Cliente</label><input id="incClient" list="incClientList" placeholder="Nombre del cliente"><datalist id="incClientList"></datalist></div>
+      <div class="row2">
+        <div class="field"><label>Centro</label><select id="incCentro"></select></div>
+        <div class="field"><label>Tipo de incidencia</label><select id="incType"></select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Prioridad</label><select id="incPrior"></select></div>
+        <div class="field"><label>Status</label><select id="incStatusSel"></select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>KAE responsable</label><select id="incKae"></select></div>
+        <div class="field"><label>ID de ticket <span class="muted" style="font-weight:500">(opcional)</span></label><input id="incTicket" placeholder="EF-703 / Slack…"></div>
+      </div>
+      <div class="field"><label>Descripción</label><textarea id="incDesc" rows="3" placeholder="¿Qué pasó?"></textarea></div>
+    </div>
+    <footer>
+      <button class="btn ghost" id="incDelete" style="display:none;margin-right:auto;border-color:#fca5a5;color:#dc2626" onclick="deleteInc()">Eliminar</button>
+      <button class="btn ghost" onclick="closeIncModal()">Cancelar</button>
+      <button class="btn" onclick="saveIncModal()">Guardar</button>
+    </footer>
   </div>
 </div>
 
@@ -1336,8 +1396,8 @@ async function autoSyncCalc(){
       if(!c){ c={id:uid(),name:n.client||n.slug,sellerId:sellerForNeg(n),contact:'',email:'',phone:'',service:'Fulfillment',shipments:0,closeDate:'',startMonth:'',notes:'Importado de Calculadora',docs:{},calcParams:{},calcSlug:n.slug}; state.clients.push(c); isNew=true; }
       const ps=c.stage,pd=(c.calcDocs||[]).length;
       applyCalcStatus(c,n.status); c.calcSlug=n.slug; c.calcNegId=n.id; c.calcDocs=docsByNeg[n.id]||[]; if(n.legal_rep&&(n.legal_rep.name||n.legal_rep.rfc||n.legal_rep.email||n.legal_rep.phone))c.legalRep=n.legal_rep;
-      // Nota: los IDs de Fulfillment/Envia NO vienen de la calculadora. Vivirán en fulfillment.envia.com
-      // y se jalarán cuando esté conectada esa integración. Por ahora son 100% manuales (pestaña Clientes). c.calcPrices=(n.prices&&Object.keys(n.prices).length)?n.prices:null; if(n.client_inputs)c.calcParams=n.client_inputs; if(n.amount_accepted!=null)c.calcAmount=+n.amount_accepted; {const _s=sellerForNeg(n);if(_s)c.sellerId=_s;} applyCalcEstimate(c,n); setOpDates(c,n);
+      // Nota: los IDs de Fulfillment/Envia NO vienen de la calculadora (viven en fulfillment.envia.com); por ahora son manuales.
+      c.calcPrices=(n.prices&&Object.keys(n.prices).length)?n.prices:null; if(n.client_inputs)c.calcParams=n.client_inputs; if(n.amount_accepted!=null)c.calcAmount=+n.amount_accepted; {const _s=sellerForNeg(n);if(_s)c.sellerId=_s;} applyCalcEstimate(c,n); setOpDates(c,n);
       if(isNew||c.stage!==ps||c.calcDocs.length!==pd){changed++;touch(c);}
     });
     if(changed){ save(); renderAll(); showToast('🔄 '+changed+' negociación(es) sincronizada(s) desde la calculadora'); }
@@ -1365,6 +1425,139 @@ function renderSeguimiento(){
   el.innerHTML=html;
 }
 
+/* ================= KAE / CUENTAS DE FULFILLMENT ================= */
+const INC_TYPES=['Error de integración','Queja de inventario','Solicitud de inventario','Error en envío','Retraso en entrega','Error en recepción','Solicitud de ingreso','Otro'];
+const INC_STATUS=[{id:'abierta',name:'Abierta',color:'#c0392b'},{id:'progreso',name:'En progreso',color:'#d68910'},{id:'resuelta',name:'Resuelta',color:'#16a34a'}];
+const INC_PRIOR=[{id:'alta',name:'Alta',color:'#c0392b'},{id:'media',name:'Media',color:'#b9770e'},{id:'baja',name:'Baja',color:'#64748b'}];
+function incStatusMeta(id){return INC_STATUS.find(s=>s.id===id)||INC_STATUS[0];}
+function incPriorMeta(id){return INC_PRIOR.find(p=>p.id===id)||INC_PRIOR[1];}
+// Registro de KAEs (vive en commission.__kaes → se persiste con la config, sin columna nueva)
+function kaeList(){state.commission=state.commission||{};if(!Array.isArray(state.commission.__kaes))state.commission.__kaes=[];return state.commission.__kaes;}
+function kaeName(id){const k=kaeList().find(x=>x.id===id);return k?k.name:'';}
+function addKae(name){name=String(name||'').trim();if(!name)return null;const ex=kaeList().find(k=>normName(k.name)===normName(name));if(ex)return ex.id;const k={id:uid(),name};kaeList().push(k);saveSettings();buildKaeSelectors();return k.id;}
+function renameKae(id,name){const k=kaeList().find(x=>x.id===id);if(k){k.name=String(name||'').trim()||k.name;saveSettings();buildKaeSelectors();renderKae();renderConfig();}}
+function removeKae(id){state.commission.__kaes=kaeList().filter(k=>k.id!==id);saveSettings();buildKaeSelectors();renderKae();renderConfig();}
+// Pendientes del KAE (commission.__kaeTasks)
+function kaeTasks(){state.commission=state.commission||{};if(!Array.isArray(state.commission.__kaeTasks))state.commission.__kaeTasks=[];return state.commission.__kaeTasks;}
+// Incidencias (tabla eco_incidents)
+function rowToInc(r){return {id:r.id,client:r.client||'',clientId:r.client_id||'',centro:r.centro||'',type:r.type||'Otro',priority:r.priority||'media',status:r.status||'abierta',kaeId:r.kae_id||'',ticket:r.ticket||'',desc:r.description||'',createdAt:r.created_at,resolvedAt:r.resolved_at,updatedAt:r.updated_at};}
+function incToRow(i){return {id:i.id,client:i.client||null,client_id:i.clientId||null,centro:i.centro||null,type:i.type||null,priority:i.priority||'media',status:i.status||'abierta',kae_id:i.kaeId||null,ticket:i.ticket||null,description:i.desc||null,created_at:i.createdAt||nowISO(),resolved_at:i.resolvedAt||null,updated_at:nowISO()};}
+async function loadIncidents(){const sb=getSbRead()||getSb();if(!sb){state.incidents=state.incidents||[];return;}try{const r=await sb.from('eco_incidents').select('*');if(!r.error)state.incidents=(r.data||[]).map(rowToInc);}catch(e){}}
+async function saveIncidentDb(i){const sb=getSb();if(!sb)return;try{const r=await sb.from('eco_incidents').upsert(incToRow(i));if(r.error)showToast('⚠ No se pudo guardar en la base: '+r.error.message+' (¿corriste el SQL de eco_incidents?)');}catch(e){}}
+async function deleteIncidentDb(id){const sb=getSb();if(!sb)return;try{await sb.from('eco_incidents').delete().eq('id',id);}catch(e){}}
+function myKaeId(){if(!currentUser)return null;const key=identKey(currentUser.name||'')||identKey(currentUser.email||'');const k=kaeList().find(x=>identKey(x.name)===key);return k?k.id:null;}
+function activeKaeFilter(){if(!isAdmin())return myKaeId()||'__none__';const el=document.getElementById('kaePick');return el?el.value:'all';}
+function incInScope(i){const f=activeKaeFilter();if(f==='all'||!f)return true;if(f==='__none__')return false;return i.kaeId===f;}
+function ffAccounts(){return (state.clients||[]).filter(c=>CLOSED_STAGES_SET.includes(c.stage));}
+function openIncForClient(c){return (state.incidents||[]).filter(i=>i.status!=='resuelta'&&(i.clientId===c.id||normName(i.client)===normName(c.name))).length;}
+function daysOpen(i){const from=i.createdAt?Date.parse(i.createdAt):Date.now();const to=(i.status==='resuelta'&&i.resolvedAt)?Date.parse(i.resolvedAt):Date.now();return Math.max(0,Math.floor((to-from)/864e5));}
+function accountHealth(c){const inc=(state.incidents||[]).filter(i=>i.status!=='resuelta'&&(i.clientId===c.id||normName(i.client)===normName(c.name)));const open=inc.length;const alta=inc.some(i=>i.priority==='alta');const viejo=inc.some(i=>daysOpen(i)>=7);if(open===0)return {c:'#16a34a',t:'OK'};if(alta||viejo||open>=3)return {c:'#c0392b',t:open+' abierta(s)'};return {c:'#d68910',t:open+' abierta(s)'};}
+function buildKaeSelectors(){const el=document.getElementById('kaePick');if(!el)return;const cur=el.value;el.innerHTML='<option value="all">KAE: todos</option>'+kaeList().map(k=>`<option value="${k.id}">${k.name}</option>`).join('');if(cur&&(cur==='all'||kaeList().find(k=>k.id===cur)))el.value=cur;el.style.display=isAdmin()?'':'none';}
+function renderKae(){
+  const el=document.getElementById('kaeContent');if(!el)return;
+  buildKaeSelectors();
+  const inc=(state.incidents||[]).filter(incInScope);
+  const open=inc.filter(i=>i.status==='abierta').length,prog=inc.filter(i=>i.status==='progreso').length;
+  const alta=inc.filter(i=>i.status!=='resuelta'&&i.priority==='alta').length,stale=inc.filter(i=>i.status!=='resuelta'&&daysOpen(i)>=7).length;
+  let mgr='';
+  if(isAdmin())mgr=`<div class="panel" style="padding:11px 14px;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13px">KAEs:</b>${kaeList().map(k=>`<span class="kae-chip" style="border-color:var(--border);color:var(--navy);padding:3px 9px">${k.name} <a onclick="removeKaeAsk('${k.id}')" style="cursor:pointer;color:#c0392b;font-weight:700">✕</a></span>`).join('')||'<span class="muted">aún no hay KAEs</span>'}<button class="btn ghost sm" onclick="addKaeAsk()">+ Agregar KAE</button></div></div>`;
+  const kpis=`<div class="kae-kpis"><div class="kae-kpi"><div class="k">Abiertas</div><div class="v" style="color:#c0392b">${open}</div></div><div class="kae-kpi"><div class="k">En progreso</div><div class="v" style="color:#d68910">${prog}</div></div><div class="kae-kpi"><div class="k">Prioridad alta</div><div class="v">${alta}</div><div class="s">sin resolver</div></div><div class="kae-kpi"><div class="k">Estancadas</div><div class="v">${stale}</div><div class="s">+7 días abiertas</div></div></div>`;
+  el.innerHTML=mgr+kpis+incidenciasHTML()+pendientesHTML();
+  if(_kaeF.view==='kanban')wireIncDnD();
+  const defKae=(!isAdmin()&&myKaeId())||'';const ks=document.getElementById('ktKae');if(ks&&defKae)ks.value=defKae;
+}
+function addKaeAsk(){uiPrompt('Nombre del KAE:','',{title:'Agregar KAE',okText:'Agregar'}).then(v=>{if(v&&v.trim()){addKae(v.trim());renderKae();showToast('KAE agregado');}});}
+async function removeKaeAsk(id){if(await uiConfirm('¿Quitar a "'+kaeName(id)+'" de la lista de KAEs? (no borra sus incidencias)',{title:'Quitar KAE',danger:true,okText:'Quitar'}))removeKae(id);}
+let _kaeF={centro:'all',status:'all',type:'all',q:'',view:'tabla'};
+function setKaeF(k,v){_kaeF[k]=v;renderKae();}
+function kaeIncFilter(){let list=(state.incidents||[]).filter(incInScope);
+  if(_kaeF.centro!=='all')list=list.filter(i=>i.centro===_kaeF.centro);
+  if(_kaeF.status!=='all')list=list.filter(i=>i.status===_kaeF.status);
+  if(_kaeF.type!=='all')list=list.filter(i=>i.type===_kaeF.type);
+  if(_kaeF.q){const q=_kaeF.q.toLowerCase();list=list.filter(i=>(i.client||'').toLowerCase().includes(q)||(i.desc||'').toLowerCase().includes(q)||(i.ticket||'').toLowerCase().includes(q));}
+  return list.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));}
+function incidenciasHTML(){
+  const centros=['all',...FF_CENTROS];
+  const bar=`<div class="kae-filterbar"><button class="btn sm" onclick="openIncModal()">+ Nueva incidencia</button><input type="search" placeholder="🔎 cliente, ticket, descripción…" value="${escAttr(_kaeF.q)}" oninput="_kaeF.q=this.value;clearTimeout(window._kaeQT);window._kaeQT=setTimeout(renderKae,250)" style="min-width:190px"><select onchange="setKaeF('centro',this.value)">${centros.map(c=>`<option value="${c}" ${_kaeF.centro===c?'selected':''}>${c==='all'?'Centro: todos':c}</option>`).join('')}</select><select onchange="setKaeF('status',this.value)"><option value="all" ${_kaeF.status==='all'?'selected':''}>Status: todos</option>${INC_STATUS.map(s=>`<option value="${s.id}" ${_kaeF.status===s.id?'selected':''}>${s.name}</option>`).join('')}</select><select onchange="setKaeF('type',this.value)"><option value="all" ${_kaeF.type==='all'?'selected':''}>Tipo: todos</option>${INC_TYPES.map(t=>`<option value="${t}" ${_kaeF.type===t?'selected':''}>${t}</option>`).join('')}</select><div class="spacer"></div><div class="kae-subtabs"><button class="kae-tab ${_kaeF.view==='tabla'?'active':''}" onclick="_kaeF.view='tabla';renderKae()">Tabla</button><button class="kae-tab ${_kaeF.view==='kanban'?'active':''}" onclick="_kaeF.view='kanban';renderKae()">Kanban</button></div><button class="btn ghost sm" onclick="exportIncidencias()">⬇ Excel</button></div>`;
+  const list=kaeIncFilter();
+  return `<div class="panel"><h3 style="margin-top:0">Incidencias <span class="muted" style="font-weight:500;font-size:13px">(${list.length})</span></h3>${bar}${_kaeF.view==='kanban'?incKanban(list):incTable(list)}</div>`;
+}
+function incTable(list){
+  if(!list.length)return '<p class="muted">Sin incidencias con este filtro.</p>';
+  const rows=list.map(i=>{const sm=incStatusMeta(i.status),pm=incPriorMeta(i.priority),d=daysOpen(i);const dCol=(i.status!=='resuelta'&&d>=7)?'#c0392b':'var(--muted)';return `<tr style="cursor:pointer" onclick="openIncModal('${i.id}')"><td>${(i.createdAt||'').slice(0,10)}</td><td><b>${i.client||'—'}</b></td><td>${i.centro||'—'}</td><td>${i.type||'—'}</td><td><span class="kae-chip" style="border-color:${pm.color}55;color:${pm.color}">${pm.name}</span></td><td><span class="kae-chip" style="border-color:${sm.color}55;color:${sm.color};background:${sm.color}12">${sm.name}</span></td><td>${kaeName(i.kaeId)||'—'}</td><td style="color:${dCol};font-weight:${(d>=7&&i.status!=='resuelta')?'700':'400'}">${i.status==='resuelta'?'✓':d+' d'}</td><td class="muted" style="max-width:300px">${escAttr((i.desc||'').slice(0,100))}</td></tr>`;}).join('');
+  return `<div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Centro</th><th>Tipo</th><th>Prioridad</th><th>Status</th><th>KAE</th><th>Días</th><th>Descripción</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function incKanban(list){
+  return `<div class="kae-kanban">`+INC_STATUS.map(s=>{const items=list.filter(i=>i.status===s.id);return `<div class="kae-col" data-st="${s.id}"><h4><span class="sem" style="background:${s.color}"></span>${s.name} <span class="muted" style="font-weight:500">(${items.length})</span></h4>${items.map(i=>{const pm=incPriorMeta(i.priority),d=daysOpen(i);return `<div class="kae-card" draggable="true" data-id="${i.id}" style="border-left-color:${pm.color}" onclick="openIncModal('${i.id}')"><div class="cl">${i.client||'—'}</div><div style="font-size:11.5px;margin-top:2px">${i.type||''}</div><div class="mt"><span class="kae-chip" style="border-color:${pm.color}55;color:${pm.color}">${pm.name}</span>${i.centro?`<span>${i.centro}</span>`:''}${kaeName(i.kaeId)?`<span>👤 ${kaeName(i.kaeId)}</span>`:''}${i.status!=='resuelta'?`<span style="color:${d>=7?'#c0392b':'inherit'}">${d} d</span>`:''}</div></div>`;}).join('')||'<p class="muted" style="font-size:12px;padding:4px">—</p>'}</div>`;}).join('')+`</div>`;
+}
+let _incDragId=null;
+function wireIncDnD(){
+  document.querySelectorAll('.kae-card[draggable]').forEach(el=>{el.addEventListener('dragstart',()=>{_incDragId=el.dataset.id;});});
+  document.querySelectorAll('.kae-col').forEach(col=>{
+    col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('drop-hover');});
+    col.addEventListener('dragleave',()=>col.classList.remove('drop-hover'));
+    col.addEventListener('drop',async e=>{e.preventDefault();col.classList.remove('drop-hover');const st=col.dataset.st;const i=(state.incidents||[]).find(x=>x.id===_incDragId);if(i&&i.status!==st){i.status=st;i.updatedAt=nowISO();i.resolvedAt=(st==='resuelta')?nowISO():null;save();await saveIncidentDb(i);renderKae();showToast('Incidencia → '+incStatusMeta(st).name);}});
+  });
+}
+function pendientesHTML(){
+  const f=activeKaeFilter();let tasks=kaeTasks().slice();
+  if(f&&f!=='all'&&f!=='__none__')tasks=tasks.filter(t=>t.kaeId===f); if(f==='__none__')tasks=[];
+  const hoy=new Date().toISOString().slice(0,10);
+  tasks.sort((a,b)=>(a.done?1:0)-(b.done?1:0)||(a.due||'9999').localeCompare(b.due||'9999'));
+  const kaeOpts=kaeList().map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+  let html=`<div class="panel"><h3 style="margin-top:0">📝 Pendientes & recordatorios <span class="muted" style="font-weight:500;font-size:13px">(${tasks.filter(t=>!t.done).length} abiertos)</span></h3><div class="kae-filterbar"><input id="ktText" placeholder="¿Qué hay que hacer?" style="flex:1;min-width:200px"><input id="ktDue" type="date" title="Fecha límite"><select id="ktKae"><option value="">KAE…</option>${kaeOpts}</select><button class="btn sm" onclick="addKaeTask()">Agregar</button></div>`;
+  html+=tasks.length?`<div class="tablewrap"><table><thead><tr><th></th><th>Pendiente</th><th>KAE</th><th>Vence</th><th></th></tr></thead><tbody>`+tasks.map(t=>{const venc=!t.done&&t.due&&t.due<=hoy;return `<tr style="${t.done?'opacity:.5':''}"><td><input type="checkbox" ${t.done?'checked':''} onchange="toggleKaeTask('${t.id}')"></td><td style="${t.done?'text-decoration:line-through':''}">${escAttr(t.text)}</td><td>${kaeName(t.kaeId)||'—'}</td><td>${t.due?`<span style="font-weight:${venc?'700':'400'};color:${venc?'#c0392b':'inherit'}">${venc?'🔔 ':''}${t.due}</span>`:'—'}</td><td><button class="btn ghost sm" onclick="delKaeTask('${t.id}')">✕</button></td></tr>`;}).join('')+`</tbody></table></div>`:'<p class="muted" style="margin-top:6px">Sin pendientes.</p>';
+  return html+'</div>';
+}
+function addKaeTask(){const text=(document.getElementById('ktText').value||'').trim();if(!text){showToast('Escribe el pendiente');return;}const kaeId=document.getElementById('ktKae').value||myKaeId()||'';const due=document.getElementById('ktDue').value||'';kaeTasks().push({id:uid(),text,kaeId,due,done:false,createdAt:nowISO()});saveSettings();renderKae();showToast('Pendiente agregado');}
+function toggleKaeTask(id){const t=kaeTasks().find(x=>x.id===id);if(t){t.done=!t.done;saveSettings();renderKae();}}
+function delKaeTask(id){state.commission.__kaeTasks=kaeTasks().filter(t=>t.id!==id);saveSettings();renderKae();}
+// ---- Modal de incidencia ----
+let _editingIncId=null;
+function openIncModal(id){
+  _editingIncId=id||null;const i=id?(state.incidents||[]).find(x=>x.id===id):null;
+  const dl=document.getElementById('incClientList');if(dl)dl.innerHTML=ffAccounts().map(c=>`<option value="${escAttr(c.name)}">`).join('');
+  const ks=document.getElementById('incKae');if(ks)ks.innerHTML='<option value="">— sin KAE</option>'+kaeList().map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+  const cs=document.getElementById('incCentro');if(cs)cs.innerHTML='<option value="">— centro</option>'+FF_CENTROS.map(c=>`<option value="${c}">${c}</option>`).join('');
+  const ts=document.getElementById('incType');if(ts)ts.innerHTML=INC_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const ps=document.getElementById('incPrior');if(ps)ps.innerHTML=INC_PRIOR.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  const ss=document.getElementById('incStatusSel');if(ss)ss.innerHTML=INC_STATUS.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('incTitle').textContent=i?'Editar incidencia':'Nueva incidencia';
+  document.getElementById('incClient').value=i?i.client:'';
+  document.getElementById('incCentro').value=i?i.centro:'';
+  document.getElementById('incType').value=i?i.type:'Otro';
+  document.getElementById('incPrior').value=i?i.priority:'media';
+  document.getElementById('incStatusSel').value=i?i.status:'abierta';
+  document.getElementById('incKae').value=i?i.kaeId:(myKaeId()||'');
+  document.getElementById('incTicket').value=i?i.ticket:'';
+  document.getElementById('incDesc').value=i?i.desc:'';
+  document.getElementById('incDelete').style.display=i?'inline-block':'none';
+  document.getElementById('incModal').classList.add('open');
+}
+function closeIncModal(){document.getElementById('incModal').classList.remove('open');}
+async function saveIncModal(){
+  const client=(document.getElementById('incClient').value||'').trim();
+  if(!client){showToast('Pon el cliente');return;}
+  const match=ffAccounts().find(c=>normName(c.name)===normName(client));
+  let i=_editingIncId?(state.incidents||[]).find(x=>x.id===_editingIncId):null;
+  const isNew=!i; if(isNew){i={id:uid(),createdAt:nowISO()};state.incidents=state.incidents||[];state.incidents.push(i);}
+  i.client=client; i.clientId=match?match.id:(i.clientId||'');
+  i.centro=document.getElementById('incCentro').value||(match?clientCentros(match)[0]||'':'');
+  i.type=document.getElementById('incType').value; i.priority=document.getElementById('incPrior').value;
+  const newStatus=document.getElementById('incStatusSel').value;
+  if(newStatus==='resuelta'&&i.status!=='resuelta')i.resolvedAt=nowISO(); if(newStatus!=='resuelta')i.resolvedAt=null;
+  i.status=newStatus; i.kaeId=document.getElementById('incKae').value||''; i.ticket=(document.getElementById('incTicket').value||'').trim(); i.desc=(document.getElementById('incDesc').value||'').trim(); i.updatedAt=nowISO();
+  save(); await saveIncidentDb(i); closeIncModal(); renderKae(); showToast(isNew?'Incidencia creada':'Incidencia actualizada');
+}
+async function deleteInc(){if(!_editingIncId)return;if(!(await uiConfirm('¿Eliminar esta incidencia? No se puede deshacer.',{title:'Eliminar incidencia',danger:true,okText:'Eliminar'})))return;const id=_editingIncId;state.incidents=(state.incidents||[]).filter(x=>x.id!==id);save();await deleteIncidentDb(id);closeIncModal();renderKae();showToast('Incidencia eliminada');}
+function exportIncidencias(){
+  const list=kaeIncFilter();
+  const head=['Fecha','Cliente','Centro','Tipo','Prioridad','Status','KAE','Ticket','Dias abierta','Resuelta','Descripcion'];
+  const esc=v=>{v=String(v==null?'':v).replace(/"/g,'""');return /[",\n]/.test(v)?'"'+v+'"':v;};
+  const rows=list.map(i=>[ (i.createdAt||'').slice(0,10),i.client,i.centro,i.type,incPriorMeta(i.priority).name,incStatusMeta(i.status).name,kaeName(i.kaeId),i.ticket,daysOpen(i),(i.resolvedAt||'').slice(0,10),i.desc ].map(esc).join(','));
+  const csv='﻿'+head.join(',')+'\n'+rows.join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='incidencias_kae.csv';a.click();URL.revokeObjectURL(url);showToast('Exportado ('+list.length+' incidencias)');
+}
 function closeNavMenus(){document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open'));}
 document.querySelector('header.top').addEventListener('click',e=>{
   const gb=e.target.closest('.navgroup-btn');
@@ -1387,6 +1580,7 @@ function goView(v){
   if(v==='seguimiento')renderSeguimiento();
   if(v==='legal')renderLegal();
   if(v==='cobros')renderCobros();
+  if(v==='kae'){renderKae();loadIncidents().then(renderKae);}
   if(['pipeline','dashboard','clientes','proyeccion'].includes(v))autoSyncCalc();
 }
 /* ---------- LEADS (prospección, tipo hoja de cálculo) ---------- */
@@ -1638,6 +1832,9 @@ function applyPermissions(){
     const adminOnly=['legal','usuarios','config'].includes(b.dataset.view);
     b.style.display=(adminOnly&&!admin)?'none':'';
   });
+  // KAE: visible para admin o para quien sea KAE (su nombre coincide con un KAE).
+  const kaeBtn=document.querySelector('header.top button[data-view="kae"]'); if(kaeBtn)kaeBtn.style.display=(admin||myKaeId())?'':'none';
+  if(!admin&&!myKaeId()&&currentView==='kae')goView('dashboard');
   // Ocultar un grupo completo si ninguno de sus ítems es visible (ej. Administración para vendedores)
   document.querySelectorAll('.navgroup').forEach(g=>{const items=[...g.querySelectorAll('button[data-view]')];const any=items.some(b=>b.style.display!=='none');g.style.display=any?'':'none';});
   // El tab "Vendedores" para un vendedor solo muestra lo suyo → se llama "Mi desempeño".
@@ -2055,7 +2252,8 @@ async function ecoLoad(){
     const prevCalc=(state&&state.calc)||{url:CALC_SUPABASE_DEFAULT,key:CALC_KEY_DEFAULT,table:'negotiations_with_seller',endpoint:'',linkBase:CALC_BASE_DEFAULT,connected:true};
     const prevSession=(state&&state.calcSession)||null;   // conservar la sesión iniciada
     const prevSlack=(state&&state.slack)||{};
-    state={sellers,clients,billing,prospects,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,slack:(set.slack&&Object.keys(set.slack).length)?set.slack:prevSlack,api:prevApi,calc:prevCalc,calcSession:prevSession,ecoMode:true};
+    const prevInc=(state&&state.incidents)||[];
+    state={sellers,clients,billing,prospects,commission:set.commission||JSON.parse(JSON.stringify(DEFAULT_COMMISSION)),goalPerSeller:set.goal_per_seller||0,slack:(set.slack&&Object.keys(set.slack).length)?set.slack:prevSlack,api:prevApi,calc:prevCalc,calcSession:prevSession,incidents:(prevInc||[]),ecoMode:true};
     migrateCommission(state.commission); // asegura estructura nueva de bonos
     fixEmailSellerNames(); // ningún vendedor se muestra como correo (alejandra.santoy@... -> "Alejandra Santoy")
     dedupeSellers(); // SOLO une vendedores duplicados en la vista local; NO borra nada en Supabase
@@ -2067,6 +2265,8 @@ async function ecoLoad(){
     save();
     await slackScan();        // avisa a Slack lo que llegó nuevo desde la calculadora/Calendly
     slackMaybeDigest();  // envía el resumen si toca (diario/semanal)
+    try{await loadIncidents();}catch(e){}   // incidencias KAE
+    if(currentView==='kae')renderKae();
     return true;
   }catch(e){showToast('Error al cargar de Supabase: '+e.message);return false;}
 }
